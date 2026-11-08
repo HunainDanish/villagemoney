@@ -12,7 +12,7 @@ import { PITCH } from '../shared/layout.js';
 //   else is actually in your region. Alone = zero messages per second.
 // - Moving updates go out twice a second; peers are smoothly interpolated.
 
-const REGION = 2; // blocks per region side
+const REGION = 3; // blocks per region side (bigger = fewer border splits)
 const SEND_MOVING_MS = 500;
 const PEER_TIMEOUT_MS = 90000; // fallback if a "leave" is ever missed
 
@@ -30,6 +30,7 @@ export class Net {
     this.wasMoving = false;
     this.others = 0;
     this.client = null;
+    this.status = 'off'; // off | connecting | live | error
     this.onCount = () => {};
   }
 
@@ -37,6 +38,7 @@ export class Net {
     if (!url || !anonKey) return false;
     const { createClient } = await import('@supabase/supabase-js');
     this.client = createClient(url, anonKey, { auth: { persistSession: false } });
+    this.status = 'connecting';
     return true;
   }
 
@@ -74,11 +76,23 @@ export class Net {
       const state = ch.presenceState();
       const ids = new Set(Object.keys(state));
       this.others = Math.max(0, ids.size - (ids.has(this.id) ? 1 : 0));
-      for (const [id, metas] of Object.entries(state)) if (id !== this.id && metas[0]) this.#receive({ ...metas[0], i: id });
+      for (const [id, metas] of Object.entries(state)) {
+        if (id === this.id || !metas[0]) continue;
+        this.#receive({ ...metas[0], i: id });
+        const peer = this.peers.get(id);
+        if (peer) peer.present = true; // still here, even if standing still
+      }
       for (const id of [...this.peers.keys()]) if (!ids.has(id) && !id.startsWith('bot')) this.#remove(id);
     });
-    ch.subscribe((status) => {
-      if (status === 'SUBSCRIBED') ch.track(this.#me(player));
+    ch.subscribe((status, err) => {
+      if (status === 'SUBSCRIBED') {
+        this.status = 'live';
+        ch.track(this.#me(player));
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        this.status = 'error';
+        this.error = err?.message || status;
+        console.warn('live players:', status, err);
+      }
     });
     this.channel = ch;
   }
@@ -136,7 +150,8 @@ export class Net {
     const cam = this.world.camera;
     const v = new THREE.Vector3();
     for (const [id, peer] of this.peers) {
-      if (now - peer.last > PEER_TIMEOUT_MS) {
+      // People who are present (per presence) stay even while standing still.
+      if (!peer.present && now - peer.last > PEER_TIMEOUT_MS) {
         this.#remove(id);
         continue;
       }

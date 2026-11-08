@@ -340,6 +340,16 @@ function openPassword() {
   });
 }
 
+// Live players status line for the Menu.
+function liveStatus() {
+  const n = net.peers.size;
+  if (isDemo()) return '👥 Demo mode: the walkers are bots.';
+  if (net.status === 'live') return `🟢 Live: you can see other players · ${n} nearby`;
+  if (net.status === 'connecting') return '🟡 Connecting to live players…';
+  if (net.status === 'error') return `🔴 Live players unavailable (${esc(net.error || 'connection error')}). Check Supabase → Realtime settings.`;
+  return '⚪ Live players are off: the Supabase publishable key is not set.';
+}
+
 // Walk the player to their own front door and open My house.
 function goHome() {
   if (!me) return openMyHouse();
@@ -399,6 +409,7 @@ function openMenu() {
   openSheet('Menu', (el) => {
     el.innerHTML = `
       ${me ? `<p>Signed in as <b>@${esc(me.username)}</b> · House #${fmt.format(me.id)}</p>` : `<p>${isDemo() ? 'Demo mode.' : 'You are exploring as a guest.'}</p>`}
+      <p>${liveStatus()}</p>
       <label class="toggle"><input type="checkbox" id="m-sound" ${isMuted() ? '' : 'checked'} /> Sound effects</label>
       ${me && !me.demo ? `<label class="toggle"><input type="checkbox" id="m-hide" ${me.hidden ? 'checked' : ''} /> Hide my username (shows as “A neighbour”)</label>` : ''}
       <div class="stack">
