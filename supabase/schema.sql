@@ -77,3 +77,13 @@ returns void language sql security definer set search_path = public as $$
   delete from sessions   where expires_at < now();
 $$;
 revoke all on function cleanup_expired() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Game progress (same as 002_game.sql; included so fresh installs need one file)
+alter table residents add column if not exists last_active date;
+create table if not exists progress (
+  resident_id bigint primary key references residents(id) on delete cascade,
+  state       jsonb not null default '{}'::jsonb,
+  updated_at  timestamptz not null default now()
+);
+alter table progress enable row level security;

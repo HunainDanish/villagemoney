@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 export default defineConfig({
   build: {
+    chunkSizeWarningLimit: 700, // three.js alone is ~500 kB before gzip
     rollupOptions: {
       input: {
         main: resolve(import.meta.dirname, 'index.html'),

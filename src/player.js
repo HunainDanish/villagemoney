@@ -1,55 +1,47 @@
 import * as THREE from 'three';
+import { Character } from './character.js';
 
-// A simple walking character. Also used for other people in town.
-export function makeCharacter(color = 0x3d7cf5) {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshLambertMaterial({ color });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.8, 1.4, 4, 12), mat);
-  body.position.y = 1.5;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.75, 16, 12), new THREE.MeshLambertMaterial({ color: 0xf3d2b3 }));
-  head.position.y = 3.3;
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), mat);
-  nose.position.set(0, 3.3, 0.75);
-  g.add(body, head, nose);
-  g.userData.body = body;
-  return g;
-}
+const damp = THREE.MathUtils.damp;
 
-export const colorForName = (name) => {
-  let h = 0;
-  for (const ch of name || '') h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return new THREE.Color().setHSL((h % 360) / 360, 0.65, 0.55);
-};
-
-// Keyboard (WASD / arrows, Shift to run), tap/click-to-walk, drag to turn,
-// wheel to zoom. Collision is delegated to world.blocked().
+// Keyboard (WASD / arrows, Shift to run), tap to walk or interact, drag to
+// turn, wheel / pinch to zoom. Camera follows with damping and looks slightly
+// ahead of where you are walking. Collision is delegated to world.blocked().
 export class Player {
-  constructor(world, canvas, { onTap }) {
+  constructor(world, canvas, { onTap, onStep }) {
     this.world = world;
-    this.mesh = makeCharacter();
-    world.scene.add(this.mesh);
-    this.pos = new THREE.Vector3(0, 0, 22);
+    this.char = new Character({ seed: 'me', shadow: true });
+    world.scene.add(this.char.group);
+    this.pos = new THREE.Vector3(0, 0, 24);
     this.heading = Math.PI;
+    this.char.heading = Math.PI;
     this.yaw = 0; // camera yaw around the player
-    this.zoom = innerWidth < innerHeight ? 1.7 : 1; // portrait phones see more
+    this.zoom = innerWidth < innerHeight ? 1.45 : 1;
     this.keys = new Set();
-    this.target = null;
+    this.target = null; // { x, z, range, onArrive }
     this.moving = false;
+    this.speed = 0;
     this.onTap = onTap;
+    this.onStep = onStep;
+    this.onCancel = () => {};
+    this.camPos = new THREE.Vector3();
+    this.camLook = new THREE.Vector3();
+    this.camReady = false;
+    this.stepAcc = 0;
 
     addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
-      this.keys.add(e.key.toLowerCase());
-      this.target = null;
+      const k = e.key.toLowerCase();
+      this.keys.add(k);
+      if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) this.cancel();
     });
     addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     addEventListener('blur', () => this.keys.clear());
     canvas.addEventListener('wheel', (e) => {
-      this.zoom = THREE.MathUtils.clamp(this.zoom * (e.deltaY > 0 ? 1.1 : 0.9), 0.45, 2.2);
+      this.zoom = THREE.MathUtils.clamp(this.zoom * (e.deltaY > 0 ? 1.1 : 0.9), 0.5, 2.2);
     }, { passive: true });
 
     let down = null;
-    const touches = new Map(); // active pointers, for pinch-to-zoom
+    const touches = new Map();
     let pinch = null;
     const spread = () => {
       const [a, b] = [...touches.values()];
@@ -73,7 +65,7 @@ export class Player {
     canvas.addEventListener('pointermove', (e) => {
       if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pinch) {
-        this.zoom = THREE.MathUtils.clamp(pinch.zoom * (pinch.d / Math.max(1, spread())), 0.45, 2.2);
+        this.zoom = THREE.MathUtils.clamp(pinch.zoom * (pinch.d / Math.max(1, spread())), 0.5, 2.2);
         return;
       }
       if (!down) return;
@@ -84,21 +76,36 @@ export class Player {
     canvas.addEventListener('pointerup', (e) => {
       lift(e);
       if (down && !down.dragged) {
-        const ndcX = (e.clientX / innerWidth) * 2 - 1;
-        const ndcY = -(e.clientY / innerHeight) * 2 + 1;
-        const hit = world.pick(ndcX, ndcY);
-        if (hit?.house) this.onTap(hit.house);
-        else if (hit?.ground) this.target = new THREE.Vector2(hit.ground.x, hit.ground.z);
+        const hit = world.pick((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+        if (hit) this.onTap(hit);
       }
       down = null;
     });
   }
 
-  teleport(x, z, faceX, faceZ) {
-    this.pos.set(x, 0, z);
+  // Walk to (x, z); call onArrive when within `range`.
+  walkTo(x, z, range = 0.8, onArrive = null) {
+    this.cancel();
+    this.target = { x, z, range, onArrive };
+  }
+
+  // Stop walking and stop any activity.
+  cancel() {
     this.target = null;
+    this.onCancel();
+  }
+
+  teleport(x, z, faceX, faceZ) {
+    this.cancel();
+    this.pos.set(x, 0, z);
     if (faceX !== undefined) this.heading = Math.atan2(faceX - x, faceZ - z);
-    this.yaw = this.heading + Math.PI; // camera behind, looking the same way
+    this.char.heading = this.heading;
+    this.yaw = this.heading + Math.PI;
+    this.camReady = false;
+  }
+
+  face(x, z) {
+    this.heading = Math.atan2(x - this.pos.x, z - this.pos.z);
   }
 
   update(dt) {
@@ -112,44 +119,79 @@ export class Player {
 
     let dir = null;
     if (fx || fz) {
-      // Movement is relative to the camera's yaw.
       const s = Math.sin(this.yaw);
       const c = Math.cos(this.yaw);
       dir = new THREE.Vector2(fx * c + fz * s, -fx * s + fz * c).normalize();
     } else if (this.target) {
-      const d = new THREE.Vector2(this.target.x - this.pos.x, this.target.y - this.pos.z);
-      if (d.length() < 0.8) this.target = null;
-      else dir = d.normalize();
+      const d = new THREE.Vector2(this.target.x - this.pos.x, this.target.z - this.pos.z);
+      if (d.length() <= this.target.range) {
+        const t = this.target;
+        this.target = null;
+        this.face(t.x, t.z);
+        t.onArrive?.();
+      } else dir = d.normalize();
     }
 
+    const running = k.has('shift') || (this.target && Math.hypot(this.target.x - this.pos.x, this.target.z - this.pos.z) > 30);
+    const want = dir ? (running ? 26 : 14) : 0;
+    this.speed = damp(this.speed, want, 10, dt);
     this.moving = Boolean(dir);
     if (dir) {
-      const speed = (k.has('shift') ? 26 : 14) * dt;
-      const nx = this.pos.x + dir.x * speed;
-      const nz = this.pos.z + dir.y * speed;
+      const step = this.speed * dt;
+      const nx = this.pos.x + dir.x * step;
+      const nz = this.pos.z + dir.y * step;
       let moved = false;
-      if (!this.world.blocked(nx, this.pos.z)) { this.pos.x = nx; moved = true; }
-      if (!this.world.blocked(this.pos.x, nz)) { this.pos.z = nz; moved = true; }
-      if (!moved) this.target = null;
-      const want = Math.atan2(dir.x, dir.y);
-      let diff = want - this.heading;
-      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-      this.heading += diff * Math.min(1, dt * 12);
+      // Already inside something (e.g. after a teleport)? Let them walk out.
+      const stuck = this.world.blocked(this.pos.x, this.pos.z);
+      if (stuck || !this.world.blocked(nx, this.pos.z)) { this.pos.x = nx; moved = true; }
+      if (stuck || !this.world.blocked(this.pos.x, nz)) { this.pos.z = nz; moved = true; }
+      if (!moved && this.target && !this.target.onArrive) this.target = null;
+      if (!moved && this.target?.onArrive && Math.hypot(this.target.x - this.pos.x, this.target.z - this.pos.z) < this.target.range + 2.5) {
+        // Close enough to interact even if something is in the way.
+        const t = this.target;
+        this.target = null;
+        this.face(t.x, t.z);
+        t.onArrive();
+      }
+      this.heading = Math.atan2(dir.x, dir.y);
+      this.stepAcc += step;
+      if (this.stepAcc > (running ? 3 : 4.5)) {
+        this.stepAcc = 0;
+        this.onStep?.(this.pos.x, this.pos.z, running);
+      }
     }
 
-    this.mesh.position.copy(this.pos);
-    this.mesh.rotation.y = this.heading;
-    this.mesh.userData.body.position.y = 1.5 + (this.moving ? Math.abs(Math.sin(performance.now() / 90)) * 0.25 : 0);
+    this.char.group.position.copy(this.pos);
+    this.char.face(this.heading, dt);
+    this.char.update(dt, this.moving ? this.speed : 0);
 
-    // Third-person camera.
-    // Steep angle so houses don't hide the player in the narrow lanes.
-    const dist = 26 * this.zoom;
+    // Third-person camera: ~45 degree pitch, damped, looks ahead.
+    const dist = 30 * this.zoom;
+    const height = 28 * this.zoom + 3;
+    const ahead = this.moving ? 3 : 0;
+    const lookX = this.pos.x + Math.sin(this.heading) * ahead;
+    const lookZ = this.pos.z + Math.cos(this.heading) * ahead;
+    const tx = this.pos.x + Math.sin(this.yaw) * dist;
+    const tz = this.pos.z + Math.cos(this.yaw) * dist;
+    if (!this.camReady) {
+      this.camPos.set(tx, height, tz);
+      this.camLook.set(lookX, 3, lookZ);
+      this.camReady = true;
+    }
+    this.camPos.set(damp(this.camPos.x, tx, 6, dt), damp(this.camPos.y, height, 6, dt), damp(this.camPos.z, tz, 6, dt));
+    this.camLook.set(damp(this.camLook.x, lookX, 10, dt), 3, damp(this.camLook.z, lookZ, 10, dt));
     const cam = this.world.camera;
-    cam.position.set(
-      this.pos.x + Math.sin(this.yaw) * dist,
-      38 * this.zoom + 4,
-      this.pos.z + Math.cos(this.yaw) * dist,
-    );
-    cam.lookAt(this.pos.x, 3, this.pos.z);
+    cam.position.copy(this.camPos);
+    if (this.shake > 0) {
+      this.shake -= dt;
+      cam.position.x += (Math.random() - 0.5) * this.shake * 1.2;
+      cam.position.y += (Math.random() - 0.5) * this.shake * 1.2;
+    }
+    cam.lookAt(this.camLook);
+    const fov = 45 + (running && this.moving ? 4 : 0);
+    if (Math.abs(cam.fov - fov) > 0.05) {
+      cam.fov = damp(cam.fov, fov, 4, dt);
+      cam.updateProjectionMatrix();
+    }
   }
 }

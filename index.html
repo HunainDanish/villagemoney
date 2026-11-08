@@ -6,15 +6,23 @@
     <title>Porchlight: a home for every follower</title>
     <meta name="description" content="A tiny 3D town where every follower gets a house." />
     <link rel="icon" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
   </head>
   <body>
     <canvas id="scene"></canvas>
+    <div id="vignette"></div>
     <div id="labels"></div>
 
     <header class="hud top">
       <div class="brand">
         <strong id="town-name">Porchlight</strong>
         <span id="count">Loading the town…</span>
+      </div>
+      <div class="chips">
+        <span class="chip" id="clock">--:--</span>
+        <span class="chip" id="coins">🪙 0</span>
       </div>
       <form id="search" class="search" autocomplete="off">
         <span>@</span>
@@ -23,35 +31,28 @@
       </form>
     </header>
 
-    <div id="demo-badge" class="badge" hidden>Demo mode · fake residents</div>
+    <div id="demo-badge" class="badge" hidden>Demo mode · fake residents · progress saved in this browser</div>
+
+    <div id="prompt" class="prompt" hidden></div>
+    <div id="celebrate" class="celebrate" hidden></div>
 
     <footer class="hud bottom">
-      <div id="guest" class="row">
-        <a id="key-btn" class="btn primary" target="_blank" rel="noopener">🔑 Get my house key</a>
-      </div>
-      <div id="member" class="row" hidden>
-        <button id="home-btn" class="btn primary">🏠 My house</button>
-        <button id="settings-btn" class="btn">⚙️</button>
-      </div>
-      <p class="hint">WASD or tap to walk · drag to turn · scroll to zoom · <span id="online">0</span> nearby</p>
+      <p class="hint" id="hint">Tap trees, rocks, flowers and the pond · WASD or tap to walk · drag to turn · <span id="online">0</span> nearby</p>
+      <nav class="hotbar">
+        <button class="slot" id="bag-btn"><span>🎒</span><small>Bag</small></button>
+        <button class="slot" id="quests-btn"><span>📜</span><small>Quests</small></button>
+        <button class="slot" id="plaza-btn"><span>⛲</span><small>Plaza</small></button>
+        <button class="slot" id="home-btn" hidden><span>🏠</span><small>Home</small></button>
+        <a class="slot primary" id="key-btn" target="_blank" rel="noopener"><span>🔑</span><small>Get a house</small></a>
+        <button class="slot" id="settings-btn"><span>⚙️</span><small>Menu</small></button>
+      </nav>
     </footer>
 
-    <div id="card" class="card" hidden>
-      <button class="close" aria-label="Close">✕</button>
-      <h2 id="card-name"></h2>
-      <p id="card-num"></p>
-      <a id="card-ig" class="btn" target="_blank" rel="noopener">Open on Instagram</a>
-    </div>
-
-    <div id="settings" class="card" hidden>
-      <button class="close" aria-label="Close">✕</button>
-      <h2>My house</h2>
-      <p id="me-line"></p>
-      <label class="toggle"><input type="checkbox" id="hide-toggle" /> Hide my username (shows as “A neighbour”)</label>
-      <button id="logout-btn" class="btn">Sign out</button>
-      <button id="delete-btn" class="btn danger">Delete my house and account</button>
-      <p class="small"><a href="/privacy">Privacy</a></p>
-    </div>
+    <!-- Sheets (bottom panels) -->
+    <section id="sheet" class="sheet" hidden>
+      <header><h2 id="sheet-title"></h2><button class="close" aria-label="Close">✕</button></header>
+      <div id="sheet-body"></div>
+    </section>
 
     <div id="toast" class="toast" hidden></div>
     <script type="module" src="/src/main.js"></script>

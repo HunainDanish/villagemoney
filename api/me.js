@@ -1,6 +1,7 @@
 import { db, hasDb } from '../lib/db.js';
 import { json, errorJson, readJson, setCookie } from '../lib/http.js';
 import { currentResident, SESSION_COOKIE } from '../lib/auth.js';
+import { applyForResident } from '../lib/progress.js';
 
 // GET    /api/me            -> who is signed in (or { resident: null })
 // PATCH  /api/me {hidden}   -> change privacy setting
@@ -9,7 +10,24 @@ import { currentResident, SESSION_COOKIE } from '../lib/auth.js';
 export async function GET(request) {
   if (!hasDb()) return json({ resident: null });
   const resident = await currentResident(request);
-  return json({ resident });
+  if (!resident) return json({ resident: null });
+
+  // Porch light: mark today as visited (one small write per resident per day).
+  const today = new Date().toISOString().slice(0, 10);
+  if (resident.last_active !== today) {
+    await db().from('residents').update({ last_active: today }).eq('id', resident.id);
+  }
+  // Daily check-in runs the rollover (streak, login gift) on the server.
+  let state = null;
+  let events = [];
+  try {
+    const r = await applyForResident(resident, [{ a: 'checkin' }]);
+    state = r.state;
+    events = r.results[0]?.events || []; // e.g. the daily streak gift
+  } catch (e) {
+    console.error('checkin failed', e); // the town still works without progress
+  }
+  return json({ resident, state, events });
 }
 
 export async function PATCH(request) {

@@ -17,6 +17,7 @@ const create = await import('../api/admin/create.js');
 const block = await import('../api/block.js');
 const find = await import('../api/find.js');
 const redeem = await import('../api/auth/redeem.js');
+const actions = await import('../api/actions.js');
 
 test('webhook verification echoes the challenge only with the right token', async () => {
   const ok = await ig.GET(new Request('http://x/api/instagram?hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=42'));
@@ -52,4 +53,9 @@ test('inputs are validated before touching the database', async () => {
   assert.equal((await find.GET(new Request('http://x/api/find?u=not%20valid'))).status, 400);
   const r = await redeem.POST(new Request('http://x', { method: 'POST', body: '{"token":"short"}' }));
   assert.equal(r.status, 410);
+});
+
+test('game actions require a signed-in resident', async () => {
+  const res = await actions.POST(new Request('http://x', { method: 'POST', body: '{"actions":[]}' }));
+  assert.equal(res.status, 401);
 });

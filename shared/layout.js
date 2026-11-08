@@ -60,8 +60,10 @@ export function housePosition(id) {
   const sz = Math.floor(slot / BLOCK_SIDE);
   const x = gx * PITCH + (sx - (BLOCK_SIDE - 1) / 2) * PLOT;
   const z = gz * PITCH + (sz - (BLOCK_SIDE - 1) / 2) * PLOT;
-  // Houses in the near half face +z, far half face -z: doors open onto paths.
-  const facing = sz < BLOCK_SIDE / 2 ? Math.PI : 0;
+  // Rows alternate: rows 0+1, 2+3, ... sit back-to-back around a shared back
+  // garden (where trees grow), and rows 1+2, 3+4, ... face each other across a
+  // front lane. The outer rows (0 and 7) face the road.
+  const facing = sz % 2 === 0 ? Math.PI : 0;
   return { x, z, facing };
 }
 

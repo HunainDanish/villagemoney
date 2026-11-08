@@ -68,6 +68,37 @@ Only send a link to the account that actually DMed you. That DM is what proves t
 
 After that, DMs saying "key" get a link automatically, and 🏠 comments build houses. Check the payload field names against Meta's current Instagram API docs when you set this up, since Meta changes them from time to time.
 
+## Upgrading an existing database (game update)
+
+If you already ran `schema.sql` before the game update, run **`supabase/002_game.sql`** once in Supabase → SQL Editor. It adds the `progress` table and the `last_active` column. Until you run it, signing in will fail.
+
+## The game
+
+| Activity | Where | Reward |
+|---|---|---|
+| 🪓 Woodcutting | Trees in back gardens and around the plaza | Logs. The tree falls, and its stump regrows in 10 min |
+| ⛏️ Mining | Rocks | Stone |
+| 🌸 Foraging | Flower beds, berry bushes | Flowers, berries |
+| 🎣 Fishing | Plaza pond: tap, wait for the bite, tap again | 5 fish (common to rare), plus the odd boot |
+| 🔨 Crafting | Workbench (plaza) | Fence, planter, bench, lantern, birdhouse, gnome |
+| 🪴 Decorating | Your house: 6 yard spots | Everyone walking by sees them |
+| 🪙 Market | Stall (plaza) | Sell items for coins, buy wall and roof paint |
+| 📜 Quests | Board (plaza) | 3 a day, plus a bonus for finishing all three |
+| 🔥 Streak and 🏮 porch light | Visit daily | Coin gift, and your porch light shines at night |
+
+**How it stays cheap and fair**
+- The rules live in one shared file, `shared/game.js`. The browser runs them for instant feedback, and `POST /api/actions` re-runs them on the server with the server's clock: cooldowns, an action budget and daily caps.
+- Actions are sent in batches about every 20 s, so playing costs about 3 small requests a minute.
+- Trees, rocks and bushes are computed from house numbers (`shared/nodes.js`), so they need no table.
+- A chopped tree is a stump only for the player who chopped it, so no realtime messages are needed.
+- Yard decor and paint ride along with the CDN-cached `/api/block` response.
+- Guests play with progress saved in their browser. Residents' progress is saved on the server.
+- The day/night cycle follows the clock (1 real minute = 1 town hour), so every player sees the same sky. Add `?time=0.9` to the URL to preview night.
+
+**Live walking now uses far fewer messages:** positions are sent only while you move, 2 times a second, and only when someone else is in your area. Standing still costs nothing, and at most 20 other people are drawn.
+
+See `docs/design-review.md` for the independent design review this update was built from.
+
 ## How it scales
 
 | Concern | How it's handled |

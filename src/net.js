@@ -1,29 +1,34 @@
 import * as THREE from 'three';
-import { makeCharacter, colorForName } from './player.js';
+import { Character } from './character.js';
 import { PITCH } from '../shared/layout.js';
 
-// Live "who is walking near me" using Supabase Realtime broadcast.
+// Live "who is walking near me" using Supabase Realtime.
 //
-// Scaling: the town is split into regions (REGION x REGION blocks). Each
-// browser joins only its own region's channel, so a message is delivered to
-// people nearby, not to everyone in town. Positions are sent a few times a
-// second while moving and rarely while standing still, and nothing is stored.
+// Message budget is the scarcest free-tier resource, so:
+// - The town is split into regions; each browser joins only its own region.
+// - Presence (sent only on join and when you stop walking) tells everyone
+//   who is in the region and where they are standing.
+// - Positions are broadcast only while you are MOVING and only if somebody
+//   else is actually in your region. Alone = zero messages per second.
+// - Moving updates go out twice a second; peers are smoothly interpolated.
 
 const REGION = 2; // blocks per region side
-const SEND_MOVING_MS = 250;
-const SEND_IDLE_MS = 4000;
-const PEER_TIMEOUT_MS = 12000;
+const SEND_MOVING_MS = 500;
+const PEER_TIMEOUT_MS = 90000; // fallback if a "leave" is ever missed
 
 export class Net {
   constructor(world, labelLayer) {
     this.world = world;
     this.labelLayer = labelLayer;
-    this.peers = new Map(); // id -> { mesh, label, to, last }
+    this.peers = new Map(); // id -> { char, label, to, h, last }
     this.id = crypto.randomUUID().slice(0, 12);
     this.name = 'Neighbour';
+    this.look = {};
     this.channel = null;
     this.region = null;
     this.lastSend = 0;
+    this.wasMoving = false;
+    this.others = 0;
     this.client = null;
     this.onCount = () => {};
   }
@@ -36,13 +41,15 @@ export class Net {
   }
 
   // Demo mode: a few wandering bots so the town doesn't feel empty.
-  startBots(n = 6) {
+  startBots(n = 7) {
+    const names = ['amna', 'zaid', 'sara', 'omar', 'hira', 'ali', 'noor', 'bilal'];
     this.bots = Array.from({ length: n }, (_, i) => ({
       id: `bot${i}`,
-      name: ['amna', 'zaid', 'sara', 'omar', 'hira', 'ali', 'noor', 'bilal'][i % 8],
-      x: (Math.random() - 0.5) * 80,
-      z: (Math.random() - 0.5) * 80,
+      name: names[i % names.length],
+      x: (Math.random() - 0.5) * 70,
+      z: (Math.random() - 0.5) * 70,
       a: Math.random() * Math.PI * 2,
+      pause: 0,
     }));
   }
 
@@ -51,13 +58,29 @@ export class Net {
     return `${Math.floor(x / s + 0.5)}:${Math.floor(z / s + 0.5)}`;
   }
 
-  #join(region) {
+  #me(player) {
+    return { i: this.id, n: this.name, x: +player.pos.x.toFixed(1), z: +player.pos.z.toFixed(1), h: +player.heading.toFixed(2) };
+  }
+
+  #join(region, player) {
     if (this.channel) this.client.removeChannel(this.channel);
     this.region = region;
-    this.channel = this.client.channel(`town:${region}`, { config: { broadcast: { self: false, ack: false } } });
-    this.channel.on('broadcast', { event: 'p' }, ({ payload }) => this.#receive(payload));
-    this.channel.on('broadcast', { event: 'bye' }, ({ payload }) => this.#remove(payload?.i));
-    this.channel.subscribe();
+    this.others = 0;
+    const ch = this.client.channel(`town:${region}`, {
+      config: { broadcast: { self: false, ack: false }, presence: { key: this.id } },
+    });
+    ch.on('broadcast', { event: 'p' }, ({ payload }) => this.#receive(payload));
+    ch.on('presence', { event: 'sync' }, () => {
+      const state = ch.presenceState();
+      const ids = new Set(Object.keys(state));
+      this.others = Math.max(0, ids.size - (ids.has(this.id) ? 1 : 0));
+      for (const [id, metas] of Object.entries(state)) if (id !== this.id && metas[0]) this.#receive({ ...metas[0], i: id });
+      for (const id of [...this.peers.keys()]) if (!ids.has(id) && !id.startsWith('bot')) this.#remove(id);
+    });
+    ch.subscribe((status) => {
+      if (status === 'SUBSCRIBED') ch.track(this.#me(player));
+    });
+    this.channel = ch;
   }
 
   #receive(p) {
@@ -65,17 +88,18 @@ export class Net {
     if (![p.x, p.z, p.h].every(Number.isFinite)) return;
     const name = typeof p.n === 'string' ? p.n.slice(0, 30) : 'Neighbour';
     let peer = this.peers.get(p.i);
+    if (!peer && this.peers.size >= 20) return; // draw at most 20 other people
     if (!peer) {
-      const mesh = makeCharacter(colorForName(name));
-      mesh.position.set(p.x, 0, p.z);
-      this.world.scene.add(mesh);
+      const char = new Character({ seed: name, shadow: false });
+      char.group.position.set(p.x, 0, p.z);
+      this.world.scene.add(char.group);
       const label = document.createElement('div');
       label.className = 'label peer';
       this.labelLayer.append(label);
-      peer = { mesh, label, to: new THREE.Vector3(p.x, 0, p.z), h: p.h, last: 0 };
+      peer = { char, label, to: new THREE.Vector3(p.x, 0, p.z), h: p.h, last: 0 };
       this.peers.set(p.i, peer);
     }
-    peer.label.textContent = name;
+    if (peer.label.textContent !== name) peer.label.textContent = name;
     peer.to.set(p.x, 0, p.z);
     peer.h = p.h;
     peer.last = performance.now();
@@ -84,29 +108,29 @@ export class Net {
   #remove(id) {
     const peer = this.peers.get(id);
     if (!peer) return;
-    this.world.scene.remove(peer.mesh);
+    this.world.scene.remove(peer.char.group);
+    peer.char.dispose();
     peer.label.remove();
     this.peers.delete(id);
   }
 
   update(player, dt, now) {
-    if (this.bots) this.#tickBots(dt, now);
+    if (this.bots) this.#tickBots(dt);
 
     if (this.client) {
       const region = this.#regionOf(player.pos.x, player.pos.z);
       if (region !== this.region) {
-        for (const id of [...this.peers.keys()]) this.#remove(id);
-        this.#join(region);
+        for (const id of [...this.peers.keys()]) if (!id.startsWith('bot')) this.#remove(id);
+        this.#join(region, player);
       }
-      const every = player.moving ? SEND_MOVING_MS : SEND_IDLE_MS;
-      if (now - this.lastSend > every && this.channel?.state === 'joined') {
+      const joined = this.channel?.state === 'joined';
+      if (joined && this.others > 0 && player.moving && now - this.lastSend > SEND_MOVING_MS) {
         this.lastSend = now;
-        this.channel.send({
-          type: 'broadcast',
-          event: 'p',
-          payload: { i: this.id, n: this.name, x: +player.pos.x.toFixed(1), z: +player.pos.z.toFixed(1), h: +player.heading.toFixed(2) },
-        });
+        this.channel.send({ type: 'broadcast', event: 'p', payload: this.#me(player) });
       }
+      // Stopped walking: one presence update so newcomers see where you stand.
+      if (joined && this.wasMoving && !player.moving) this.channel.track(this.#me(player));
+      this.wasMoving = player.moving;
     }
 
     const cam = this.world.camera;
@@ -116,11 +140,19 @@ export class Net {
         this.#remove(id);
         continue;
       }
-      const moving = peer.mesh.position.distanceToSquared(peer.to) > 0.01;
-      peer.mesh.position.lerp(peer.to, Math.min(1, dt * 6));
-      peer.mesh.rotation.y = peer.h;
-      peer.mesh.userData.body.position.y = 1.5 + (moving ? Math.abs(Math.sin(now / 90)) * 0.25 : 0);
-      v.copy(peer.mesh.position).setY(5.2).project(cam);
+      const g = peer.char.group;
+      const dist = g.position.distanceTo(peer.to);
+      // Walk toward the last known position at walking speed (no teleporting).
+      const step = Math.min(dist, Math.max(14, dist * 2) * dt);
+      if (dist > 0.05) {
+        const dir = peer.to.clone().sub(g.position).normalize();
+        g.position.addScaledVector(dir, step);
+        peer.char.face(Math.atan2(dir.x, dir.z), dt);
+      } else {
+        peer.char.face(peer.h, dt);
+      }
+      peer.char.update(dt, dist > 0.05 ? step / dt : 0);
+      v.copy(g.position).setY(5.6).project(cam);
       const on = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
       peer.label.style.display = on ? '' : 'none';
       if (on) peer.label.style.transform = `translate(-50%,-50%) translate(${((v.x + 1) / 2) * innerWidth}px,${((1 - v.y) / 2) * innerHeight}px)`;
@@ -128,18 +160,26 @@ export class Net {
     this.onCount(this.peers.size);
   }
 
-  #tickBots(dt, now) {
+  #tickBots(dt) {
     for (const b of this.bots) {
-      b.a += (Math.random() - 0.5) * dt * 2;
-      const nx = b.x + Math.sin(b.a) * dt * 9;
-      const nz = b.z + Math.cos(b.a) * dt * 9;
-      if (this.world.blocked(nx, nz) || Math.hypot(nx, nz) > 160) b.a += Math.PI / 2;
-      else { b.x = nx; b.z = nz; }
+      if (b.pause > 0) {
+        b.pause -= dt;
+        continue;
+      }
+      if (Math.random() < dt * 0.15) b.pause = 1 + Math.random() * 3;
+      b.a += (Math.random() - 0.5) * dt * 1.5;
+      const nx = b.x + Math.sin(b.a) * dt * 7;
+      const nz = b.z + Math.cos(b.a) * dt * 7;
+      if (this.world.blocked(nx, nz) || Math.hypot(nx, nz) > 140) b.a += Math.PI / 2;
+      else {
+        b.x = nx;
+        b.z = nz;
+      }
       this.#receive({ i: b.id, n: b.name, x: b.x, z: b.z, h: b.a });
     }
   }
 
   leave() {
-    this.channel?.send({ type: 'broadcast', event: 'bye', payload: { i: this.id } });
+    if (this.channel) this.client.removeChannel(this.channel);
   }
 }

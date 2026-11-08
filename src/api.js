@@ -84,7 +84,7 @@ function demoBlock(b) {
   const houses = [];
   const from = firstHouseOfBlock(b);
   for (let id = from; id < from + HOUSES_PER_BLOCK && id <= DEMO_HOUSES; id++) {
-    houses.push({ id, u: id % 23 === 0 ? null : demoName(id) }); // a few hidden
+    houses.push({ id, u: id % 23 === 0 ? null : demoName(id), lit: id % 3 === 0 ? 1 : undefined }); // a few hidden, some porch lights on
   }
   return { b, houses };
 }
