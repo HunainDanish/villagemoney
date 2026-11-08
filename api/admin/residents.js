@@ -1,12 +1,13 @@
 import { db, hasDb } from '../../lib/db.js';
 import { json, errorJson } from '../../lib/http.js';
-import { isAdmin } from '../../lib/auth.js';
+import { adminProblem } from '../../lib/auth.js';
 import { normalizeUsername } from '../../shared/layout.js';
 
 // GET    /api/admin/residents            -> latest 50 residents
 // DELETE /api/admin/residents?u=name     -> remove a house (moderation)
 export async function GET(request) {
-  if (!isAdmin(request)) return errorJson('Wrong admin secret', 401);
+  const problem = adminProblem(request);
+  if (problem) return errorJson(problem, 401);
   if (!hasDb()) return errorJson('Database is not configured', 503);
   const { data, error } = await db()
     .from('residents')
@@ -18,7 +19,8 @@ export async function GET(request) {
 }
 
 export async function DELETE(request) {
-  if (!isAdmin(request)) return errorJson('Wrong admin secret', 401);
+  const problem = adminProblem(request);
+  if (problem) return errorJson(problem, 401);
   if (!hasDb()) return errorJson('Database is not configured', 503);
   const u = normalizeUsername(new URL(request.url).searchParams.get('u'));
   if (!u) return errorJson('Bad username');

@@ -68,3 +68,21 @@ test('IG_HANDLE is cleaned up whatever format it was entered in', async () => {
   assert.equal(cleanHandle(''), '');
   assert.equal(cleanHandle(undefined), '');
 });
+
+test('admin errors say what is wrong, and ignore stray spaces', async () => {
+  const req = (secret) => new Request('http://x', { method: 'POST', body: '{}', headers: { 'x-admin-secret': secret } });
+  const msg = async (res) => (await res.json()).error;
+  const saved = process.env.ADMIN_SECRET;
+  try {
+    delete process.env.ADMIN_SECRET;
+    assert.match(await msg(await create.POST(req('x'))), /not set/);
+    process.env.ADMIN_SECRET = 'short';
+    assert.match(await msg(await create.POST(req('short'))), /shorter than 16/);
+    process.env.ADMIN_SECRET = '  a-long-admin-secret-123\n';
+    assert.match(await msg(await create.POST(req('nope'))), /Wrong admin secret/);
+    const ok = await create.POST(req(' a-long-admin-secret-123 '));
+    assert.notEqual(ok.status, 401); // got past the secret check
+  } finally {
+    process.env.ADMIN_SECRET = saved;
+  }
+});
