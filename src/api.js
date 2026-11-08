@@ -51,8 +51,9 @@ export async function loadMe() {
   if (demo) return { resident: null };
   try {
     return await get('/api/me');
-  } catch {
-    return { resident: null };
+  } catch (e) {
+    // Don't silently look signed out: pass the reason on so the page shows it.
+    return { resident: null, error: e.message };
   }
 }
 

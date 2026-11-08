@@ -445,6 +445,7 @@ async function boot() {
 
   const res = await loadMe();
   me = res.resident;
+  if (res.error || res.warning) setTimeout(() => ui.celebrate(res.error || res.warning), 600);
   if (me && res.state) store.initMember(me, res.state, res.events);
   else {
     if (isDemo()) me = { id: 7, username: demoNameFor(7), hidden: false, demo: true };

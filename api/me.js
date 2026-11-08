@@ -7,10 +7,24 @@ import { applyForResident } from '../lib/progress.js';
 // PATCH  /api/me {hidden}   -> change privacy setting
 // DELETE /api/me            -> delete house and account immediately
 
+const MIGRATION_HINT =
+  'Your database needs the game update: run supabase/002_game.sql in Supabase → SQL Editor. Until then progress is not saved.';
+
 export async function GET(request) {
   if (!hasDb()) return json({ resident: null });
-  const resident = await currentResident(request);
+  let resident;
+  try {
+    resident = await currentResident(request);
+  } catch (e) {
+    console.error('session lookup failed', e);
+    return errorJson(`Could not check your sign-in: ${e.message || 'database error'}`, 500);
+  }
   if (!resident) return json({ resident: null });
+  if (resident.needsMigration) {
+    const { needsMigration, ...rest } = resident;
+    void needsMigration;
+    return json({ resident: rest, state: null, events: [], warning: MIGRATION_HINT });
+  }
 
   // Porch light: mark today as visited (one small write per resident per day).
   const today = new Date().toISOString().slice(0, 10);
@@ -26,6 +40,8 @@ export async function GET(request) {
     events = r.results[0]?.events || []; // e.g. the daily streak gift
   } catch (e) {
     console.error('checkin failed', e); // the town still works without progress
+    const missing = /progress|relation|schema cache/i.test(e.message || '');
+    return json({ resident, state: null, events: [], warning: missing ? MIGRATION_HINT : 'Could not load your progress right now.' });
   }
   return json({ resident, state, events });
 }
