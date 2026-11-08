@@ -344,7 +344,10 @@ function openPassword() {
 function liveStatus() {
   const n = net.peers.size;
   if (isDemo()) return '👥 Demo mode: the walkers are bots.';
-  if (net.status === 'live') return `🟢 Live: you can see other players · ${n} nearby`;
+  if (net.status === 'live') {
+    const here = net.channel ? Object.keys(net.channel.presenceState()).length : 0;
+    return `🟢 Live: you can see other players · ${n} nearby<br><small>Channel ${esc(net.region || '?')} · ${here} connected here (including you) · id ${esc(net.id.slice(0, 6))}</small>`;
+  }
   if (net.status === 'connecting') return '🟡 Connecting to live players…';
   if (net.status === 'error') return `🔴 Live players unavailable (${esc(net.error || 'connection error')}). Check Supabase → Realtime settings.`;
   return '⚪ Live players are off: the Supabase publishable key is not set.';
