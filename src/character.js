@@ -53,6 +53,7 @@ export class Character {
     const pants = look.pants ?? PANTS[(h >>> 12) % PANTS.length];
 
     const group = new THREE.Group();
+    group.scale.setScalar(0.82); // ~3.2 units tall: doors are 3 units
     const root = new THREE.Group(); // bobs and leans
     group.add(root);
 

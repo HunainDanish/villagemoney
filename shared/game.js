@@ -42,6 +42,15 @@ const FISH_COOLDOWN_MS = 6000;
 const FISH_CAP = 60;
 
 export const PAINT_PRICE = 40;
+
+// House upgrades: everyone starts with a small home (cottage, cabin or
+// bungalow). Each tier is a bigger house that every visitor can see.
+export const HOUSE_TIERS = [
+  { tier: 1, name: 'Starter home', blurb: 'A cosy cottage, cabin or bungalow.' },
+  { tier: 2, name: 'Family home', blurb: 'Wider, with a covered front porch and a dormer window.', cost: { log: 20, stone: 10, coins: 100 } },
+  { tier: 3, name: 'Two-storey house', blurb: 'A second floor, more windows and a door canopy.', cost: { log: 40, stone: 25, coins: 250 } },
+  { tier: 4, name: 'Manor', blurb: 'Columns, a balcony, a garage wing and two chimneys.', cost: { log: 80, stone: 50, coins: 600 } },
+];
 export const WALL_PAINTS = [0xf6e7d0, 0xf2c6b4, 0xcfe5f2, 0xfff1a8, 0xd9f0c9, 0xe8d5f5, 0xfad2d2, 0xffffff, 0x9fb7d9, 0xc9a27e];
 export const ROOF_PAINTS = [0xc0504d, 0x4f6d9a, 0x5b8c5a, 0x8a5a44, 0x3e3e4a, 0xd98c3f, 0x7b5ea7, 0x2f7f86];
 
@@ -55,7 +64,7 @@ export const xpForLevel = (lvl) => 20 * (lvl - 1) ** 2;
 export function initialState() {
   return {
     v: 1, items: {}, coins: 0, xp: {}, nodes: {}, day: null, counts: {}, visits: [],
-    quests: 0, streak: 0, lastDay: null, decor: Array(YARD_SLOTS.length).fill(null), paint: {},
+    quests: 0, streak: 0, lastDay: null, decor: Array(YARD_SLOTS.length).fill(null), paint: {}, tier: 1,
     tokens: TOKENS_MAX, tokensAt: 0, fishAt: 0,
   };
 }
@@ -242,6 +251,19 @@ export function applyAction(s, action, ctx) {
       return { ok: true, events };
     }
 
+    case 'upgrade': {
+      const next = HOUSE_TIERS[s.tier || 1]; // tiers are 1-based
+      if (!next) return fail('your house is fully upgraded');
+      const { coins = 0, ...mats } = next.cost;
+      for (const [item, n] of Object.entries(mats)) if ((s.items[item] || 0) < n) return fail(`you need ${n} ${ITEMS[item].name.toLowerCase()}s`);
+      if (s.coins < coins) return fail(`you need ${coins} coins`);
+      for (const [item, n] of Object.entries(mats)) s.items[item] -= n;
+      s.coins -= coins;
+      s.tier = next.tier;
+      events.push({ type: 'decor' }, { type: 'upgrade', tier: next.tier, name: next.name });
+      return { ok: true, events };
+    }
+
     case 'visit': {
       const house = action.house;
       if (!Number.isInteger(house) || house < 1) return fail('bad house');
@@ -278,4 +300,4 @@ export function applyBatch(state, actions, ctx) {
 }
 
 // Public bits of a resident's yard, mirrored into residents.look for /api/block.
-export const publicLook = (s) => ({ decor: s.decor, paint: s.paint });
+export const publicLook = (s) => ({ decor: s.decor, paint: s.paint, tier: s.tier || 1 });

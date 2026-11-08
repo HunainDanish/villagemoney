@@ -7,6 +7,7 @@ import {
 import { plotNodes, plazaNodes, NODE_KINDS, YARD_SLOTS, toWorld, PLAZA } from '../shared/nodes.js';
 import { WALL_PAINTS, ROOF_PAINTS } from '../shared/game.js';
 import * as M from './models.js';
+import { houseModels, modelFor } from './houses.js';
 import { Sky } from './sky.js';
 import { loadBlock } from './api.js';
 
@@ -138,10 +139,11 @@ export class World {
   // ---------- houses ----------
   #buildHouseMeshes() {
     this.styles = [];
-    for (let i = 0; i < M.HOUSE_STYLES; i++) {
-      const g = M.houseStyle(i);
+    this.models = houseModels();
+    for (const g of this.models) {
       const castWalls = !MOBILE;
       const st = {
+        meta: g.meta,
         walls: this.#instanced(g.walls, vc(), CAPACITY, { cast: castWalls, receive: true }),
         roof: this.#instanced(g.roof, vc({ flatShading: true }), CAPACITY, { cast: castWalls }),
         details: this.#instanced(g.details, vc(), CAPACITY),
@@ -498,7 +500,9 @@ export class World {
         const h = this.overrides.has(h0.id) ? { ...h0, ...this.overrides.get(h0.id) } : h0;
         const p = housePosition(h.id);
         const seed = hash(h.id);
-        const st = this.styles[seed % M.HOUSE_STYLES];
+        const model = modelFor(h.id, h.t || 1, seed);
+        const st = this.styles[model];
+        const meta = st.meta;
         const i = st.list.length;
         q.setFromAxisAngle(up, p.facing);
         m.compose(new THREE.Vector3(p.x, 0, p.z), q, one);
@@ -511,21 +515,22 @@ export class World {
         const roof = h.p?.roof ?? null;
         st.walls.setColorAt(i, c.setHex(wall !== null ? WALL_PAINTS[wall] ?? WALL_PAINTS[0] : WALL_PAINTS[(seed >>> 4) % 8]));
         st.roof.setColorAt(i, c.setHex(roof !== null ? ROOF_PAINTS[roof] ?? ROOF_PAINTS[0] : ROOF_PAINTS[(seed >>> 8) % 7]));
-        // Porch light just right of the door.
-        const pl = toWorld(p, 1.25, 3.4 + (seed % M.HOUSE_STYLES === 2 ? 0.5 : 0));
-        m.makeTranslation(pl.x, 2.95, pl.z);
+        // Porch light beside the door.
+        const pl = toWorld(p, meta.porch[0], meta.porch[2]);
+        m.makeTranslation(pl.x, meta.porch[1] + 0.3, pl.z);
         this.porch.setMatrixAt(porch++, m);
         this.porchPos.push(pl);
         // Yard decor.
         (h.d || []).forEach((item, slot) => {
           const mesh = this.decorMeshes[item];
-          if (!mesh || slot >= YARD_SLOTS.length) return;
-          const w = toWorld(p, ...YARD_SLOTS[slot]);
+          const slots = meta.slots || YARD_SLOTS;
+          if (!mesh || slot >= slots.length) return;
+          const w = toWorld(p, ...slots[slot]);
           q.setFromAxisAngle(up, p.facing);
           m.compose(new THREE.Vector3(w.x, 0, w.z), q, one);
           mesh.setMatrixAt(decorCount[item]++, m);
         });
-        const rec = { ...h, x: p.x, z: p.z, facing: p.facing, style: seed % M.HOUSE_STYLES, windows: Boolean(h.lit) || hash(h.id + 99) % 10 < 7 };
+        const rec = { ...h, x: p.x, z: p.z, facing: p.facing, style: model, height: meta.height + 1.5, windows: Boolean(h.lit) || hash(h.id + 99) % 10 < 7 };
         st.list.push(rec);
         this.drawnAll.push(rec);
       }
@@ -700,9 +705,9 @@ export class World {
     this.ripples.instanceMatrix.needsUpdate = true;
     this.ripples.material.opacity = 0.3;
 
-    // Chimney smoke from the nearest chimneys (cottages and townhouses).
+    // Chimney smoke from the nearest chimneys.
     const chimneys = [];
-    for (const st of [this.styles[0], this.styles[1]]) {
+    for (const st of this.styles) {
       for (const h of st.list) {
         const d = (h.x - px) ** 2 + (h.z - pz) ** 2;
         if (d < 70 ** 2) chimneys.push([d, h]);
@@ -710,9 +715,9 @@ export class World {
     }
     chimneys.sort((a, b) => a[0] - b[0]);
     const srcs = chimneys.slice(0, 10).map(([, h]) => {
-      const local = h.style === 0 ? [2.2, -1.2, 7.0] : [-1.8, -1.5, 9.6];
-      const w = toWorld({ x: h.x, z: h.z, facing: h.facing }, local[0], local[1]);
-      return [w.x, local[2], w.z];
+      const [cx, cy, cz] = this.styles[h.style].meta.chimney;
+      const w = toWorld({ x: h.x, z: h.z, facing: h.facing }, cx, cz);
+      return [w.x, cy + 0.3, w.z];
     });
     let si = 0;
     for (const p of this.smokePuffs) {
@@ -759,10 +764,19 @@ export class World {
     const sz = Math.round(lz / PLOT + (BLOCK_SIDE - 1) / 2);
     if (sx < 0 || sz < 0 || sx >= BLOCK_SIDE || sz >= BLOCK_SIDE) return false;
     const id = b * HOUSES_PER_BLOCK + sz * BLOCK_SIDE + sx + 1;
-    if (this.houses.has(id)) {
-      const cx = (sx - (BLOCK_SIDE - 1) / 2) * PLOT;
-      const cz = (sz - (BLOCK_SIDE - 1) / 2) * PLOT;
-      if (Math.abs(lx - cx) < 4.0 && Math.abs(lz - cz) < 3.9) return true;
+    const h = this.houses.get(id);
+    if (h) {
+      // Footprint of this house's model, in the house's own frame.
+      const tier = this.overrides.get(id)?.t ?? h.t ?? 1;
+      const meta = this.models[modelFor(id, tier, hash(id))].meta;
+      const p = housePosition(id);
+      const dx = x - p.x;
+      const dz = z - p.z;
+      const c = Math.cos(p.facing);
+      const sn = Math.sin(p.facing);
+      const ux = dx * c - dz * sn;
+      const uz = dx * sn + dz * c;
+      if (Math.abs(ux - (meta.cx || 0)) < meta.hx && Math.abs(uz) < meta.hz) return true;
     }
     // Nodes of this plot and the plot behind it (shared back garden).
     const neighbours = [id, id - BLOCK_SIDE, id + BLOCK_SIDE].filter((n) => n >= 1);

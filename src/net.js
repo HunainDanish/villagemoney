@@ -152,7 +152,7 @@ export class Net {
         peer.char.face(peer.h, dt);
       }
       peer.char.update(dt, dist > 0.05 ? step / dt : 0);
-      v.copy(g.position).setY(5.6).project(cam);
+      v.copy(g.position).setY(4.8).project(cam);
       const on = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
       peer.label.style.display = on ? '' : 'none';
       if (on) peer.label.style.transform = `translate(-50%,-50%) translate(${((v.x + 1) / 2) * innerWidth}px,${((1 - v.y) / 2) * innerHeight}px)`;

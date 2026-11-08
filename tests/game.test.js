@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyBatch, initialState, dailyQuests, levelFor, RECIPES } from '../shared/game.js';
+import { applyBatch, initialState, dailyQuests, levelFor, RECIPES, HOUSE_TIERS } from '../shared/game.js';
 import { plotNodes, plazaNodes, nodeById, NODE_KINDS } from '../shared/nodes.js';
 import { housePosition } from '../shared/layout.js';
 
@@ -109,4 +109,18 @@ test('levels grow with xp', () => {
   assert.equal(levelFor(0), 1);
   assert.equal(levelFor(20), 2);
   assert.ok(levelFor(5000) > 10);
+});
+
+test('house upgrades cost materials and coins, one tier at a time', () => {
+  let s = initialState();
+  let r;
+  ({ results: r } = applyBatch(s, [{ a: 'upgrade' }], ctx(T0)));
+  assert.equal(r[0].ok, false);
+  s.items = { log: 200, stone: 200 };
+  s.coins = 2000;
+  ({ state: s, results: r } = applyBatch(s, [{ a: 'upgrade' }, { a: 'upgrade' }, { a: 'upgrade' }, { a: 'upgrade' }], ctx(T0)));
+  assert.deepEqual(r.map((x) => x.ok), [true, true, true, false]);
+  assert.equal(s.tier, 4);
+  const spent = HOUSE_TIERS.slice(1).reduce((a, t) => a + t.cost.log, 0);
+  assert.equal(s.items.log, 200 - spent);
 });

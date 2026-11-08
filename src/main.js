@@ -9,7 +9,7 @@ import { Particles, sfx, isMuted, setMuted } from './fx.js';
 import { loadConfig, loadStats, loadMe, findHouse, send, isDemo } from './api.js';
 import { housePosition, blockOfHouse, normalizeUsername } from '../shared/layout.js';
 import {
-  ITEMS, RECIPES, SKILLS, WALL_PAINTS, ROOF_PAINTS, PAINT_PRICE,
+  ITEMS, RECIPES, SKILLS, WALL_PAINTS, ROOF_PAINTS, PAINT_PRICE, HOUSE_TIERS,
   levelFor, xpForLevel, dailyQuests, questProgress,
 } from '../shared/game.js';
 import { YARD_SLOTS, PLAZA } from '../shared/nodes.js';
@@ -88,7 +88,7 @@ function drawLabels() {
   pool.forEach((el, i) => {
     const h = near[i];
     if (!h) return void (el.style.display = 'none');
-    v.set(h.x, h.style === 1 ? 11.5 : 9.5, h.z).project(world.camera);
+    v.set(h.x, h.height || 10, h.z).project(world.camera);
     if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) return void (el.style.display = 'none');
     el.style.display = '';
     const text = h.u ? `@${h.u}` : 'A neighbour';
@@ -121,6 +121,7 @@ async function act(action) {
 
 function openHouse(h, onKnock) {
   const mine = me?.id === h.id;
+  if (mine) return openMyHouse();
   openSheet(h.u ? `@${h.u}` : 'A neighbour', (el) => {
     el.innerHTML = `
       <p>House #${fmt.format(h.id)}${mine ? ' · this is your home' : ''}${world.houses.get(h.id)?.lit ? ' · porch light is on tonight 🏮' : ''}</p>
@@ -182,32 +183,86 @@ function openShop() {
   openSheet('Market stall', (el) => {
     const s = store.state;
     const sellable = Object.entries(s.items).filter(([k, n]) => n > 0 && ITEMS[k]?.sell);
-    const paints = (list, part) =>
-      `<div class="swatches">${list.map((c, i) => `<button class="swatch ${s.paint?.[part] === i ? 'on' : ''}" style="background:${hex(c)}" data-part="${part}" data-c="${i}" aria-label="${part} colour ${i + 1}"></button>`).join('')}</div>`;
     el.innerHTML = `
       <p>🪙 ${fmt.format(s.coins)} coins. Sell what you gather, then repaint your house.</p>
       ${sellable.length ? sellable.map(([k, n]) => `<div class="row"><span class="ico">${ITEMS[k].icon}</span><div class="grow"><b>${ITEMS[k].name} × ${n}</b><small>${ITEMS[k].sell} 🪙 each</small></div><button class="btn" data-sell="${k}" data-n="1">Sell 1</button><button class="btn good" data-sell="${k}" data-n="${n}">All</button></div>`).join('') : '<p>Nothing to sell yet.</p>'}
-      <h3>Wall paint · ${PAINT_PRICE} 🪙</h3>${paints(WALL_PAINTS, 'wall')}
-      <h3>Roof paint · ${PAINT_PRICE} 🪙</h3>${paints(ROOF_PAINTS, 'roof')}
-      ${me ? '' : '<p>Paint shows on your house once you have one.</p>'}`;
+      <p>Spend coins on paint and upgrades in <b>🏠 My house</b>.</p>
+      ${me ? '<button class="btn primary" id="shop-home">🏠 Go to my house</button>' : ''}`;
+    el.querySelector('#shop-home')?.addEventListener('click', () => goHome());
     el.querySelectorAll('[data-sell]').forEach((b) =>
       (b.onclick = async () => {
         const r = await act({ a: 'sell', item: b.dataset.sell, qty: Number(b.dataset.n) });
         if (r.ok) sfx.pickup();
       }),
     );
+  });
+}
+
+// My house: upgrade, paint and decorate, standing in front of it so every
+// change is visible immediately.
+function openMyHouse() {
+  if (!me) {
+    return openSheet('Your own house', (el) => {
+      el.innerHTML = `<p>Every follower gets a house in town. ${isDemo() ? 'Sign-in is off in demo mode.' : 'DM us the word <b>key</b> on Instagram to get yours, then upgrade, paint and decorate it here.'}</p>
+        ${cfg?.igHandle ? `<a class="btn primary" target="_blank" rel="noopener" href="https://ig.me/m/${encodeURIComponent(cfg.igHandle)}">🔑 Get my house key</a>` : ''}`;
+    });
+  }
+  openSheet('My house', (el) => {
+    const s = store.state;
+    const tier = s.tier || 1;
+    const cur = HOUSE_TIERS[tier - 1];
+    const next = HOUSE_TIERS[tier];
+    let upgrade = '<p>🏆 Your house is fully upgraded. Neighbours can see your manor from down the street.</p>';
+    if (next) {
+      const { coins = 0, ...mats } = next.cost;
+      const have = (i) => s.items[i] || 0;
+      const can = Object.entries(mats).every(([i, n]) => have(i) >= n) && s.coins >= coins;
+      const cost = [...Object.entries(mats).map(([i, n]) => `${ITEMS[i].icon} ${have(i)}/${n}`), `🪙 ${fmt.format(s.coins)}/${coins}`].join(' · ');
+      upgrade = `<div class="row"><span class="ico">⬆️</span><div class="grow"><b>Upgrade to ${next.name}</b><small>${next.blurb}</small><small>${cost}</small></div><button class="btn ${can ? 'good' : ''}" id="up-btn" ${can ? '' : 'disabled'}>Upgrade</button></div>
+        ${can ? '' : '<p>Chop trees for logs, mine rocks for stone, and sell at the market for coins.</p>'}`;
+    }
+    const swatches = (list, part) =>
+      `<div class="swatches">${list.map((c, i) => `<button class="swatch ${s.paint?.[part] === i ? 'on' : ''}" style="background:${hex(c)}" data-part="${part}" data-c="${i}" aria-label="${part} colour ${i + 1}"></button>`).join('')}</div>`;
+    el.innerHTML = `
+      <p>House #${fmt.format(me.id)} · <b>${cur.name}</b> (level ${tier} of ${HOUSE_TIERS.length}) · 🪙 ${fmt.format(s.coins)}</p>
+      ${upgrade}
+      <h3>Wall paint · ${PAINT_PRICE} 🪙 each</h3>${swatches(WALL_PAINTS, 'wall')}
+      <h3>Roof paint · ${PAINT_PRICE} 🪙 each</h3>${swatches(ROOF_PAINTS, 'roof')}
+      <div class="stack"><button class="btn" id="decor-btn">🪴 Decorate my yard</button></div>`;
+    el.querySelector('#decor-btn').onclick = openDecor;
+    el.querySelector('#up-btn')?.addEventListener('click', async () => {
+      const r = await act({ a: 'upgrade' });
+      if (!r.ok) return;
+      sfx.level();
+      syncOwnHouse();
+      const p = housePosition(me.id);
+      for (let i = 0; i < 4; i++) setTimeout(() => particles.sparkle(p.x + (Math.random() - 0.5) * 8, 4 + Math.random() * 4, p.z + (Math.random() - 0.5) * 6), i * 180);
+      player.shake = 0.4;
+      ui.celebrate(`🏡 Upgraded to ${r.events.find((e) => e.type === 'upgrade')?.name}!`);
+    });
     el.querySelectorAll('[data-part]').forEach((b) =>
       (b.onclick = async () => {
-        if (!confirm(`Buy this ${b.dataset.part} paint for ${PAINT_PRICE} coins?`)) return;
-        const r = await act({ a: 'paint', part: b.dataset.part, color: Number(b.dataset.c) });
+        const part = b.dataset.part;
+        const color = Number(b.dataset.c);
+        if (s.paint?.[part] === color) return;
+        if (!confirm(`Paint your ${part === 'wall' ? 'walls' : 'roof'} this colour for ${PAINT_PRICE} coins?`)) return;
+        const r = await act({ a: 'paint', part, color });
         if (r.ok) {
-          sfx.level();
+          sfx.pickup();
           syncOwnHouse();
           ui.celebrate('Fresh paint! 🎨');
         }
       }),
     );
   });
+}
+
+// Walk the player to their own front door and open My house.
+function goHome() {
+  if (!me) return openMyHouse();
+  closeSheet();
+  goToHouse(me.id);
+  openMyHouse();
 }
 
 function openQuests() {
@@ -331,7 +386,7 @@ $('plaza-btn').onclick = () => {
   world.showMarker(null);
   ui.toast('Welcome to the plaza: workbench, market, pond and quest board');
 };
-$('home-btn').onclick = () => me && (closeSheet(), goToHouse(me.id));
+$('home-btn').onclick = goHome;
 
 function renderMe() {
   $('home-btn').hidden = !me;
@@ -342,7 +397,7 @@ function renderMe() {
 // Show my own decor/paint right away (the shared CDN copy updates later).
 function syncOwnHouse() {
   if (!me) return;
-  world.setOverride(me.id, { d: store.state.decor, p: store.state.paint, lit: 1 });
+  world.setOverride(me.id, { d: store.state.decor, p: store.state.paint, t: store.state.tier || 1, lit: 1 });
 }
 
 store.on((state, events) => {
@@ -353,6 +408,7 @@ store.on((state, events) => {
     $('coins').classList.add('bump');
   }
   for (const e of events || []) if (e.type === 'daily') ui.celebrate(`🔥 Day ${e.streak} streak · +${e.coins} 🪙`);
+  if (events?.some((e) => e.type === 'decor')) syncOwnHouse();
   world.markNodesDirty();
   rerender();
 });

@@ -25,6 +25,7 @@ export async function GET(request) {
     const h = { id: r.id, u: r.hidden ? null : r.username };
     if (r.look?.decor?.some(Boolean)) h.d = r.look.decor;
     if (r.look?.paint && Object.keys(r.look.paint).length) h.p = r.look.paint;
+    if (r.look?.tier > 1) h.t = r.look.tier; // upgraded house
     if (r.last_active === today) h.lit = 1; // porch light on tonight
     return h;
   });
