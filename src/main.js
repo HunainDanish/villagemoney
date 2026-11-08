@@ -264,6 +264,82 @@ function openMyHouse() {
   });
 }
 
+// Sign in: password for returning residents, or get a house key by DM.
+function openSignIn() {
+  openSheet('Sign in', (el) => {
+    el.innerHTML = `
+      <form id="signin-form" class="form" autocomplete="on">
+        <label>Instagram username
+          <input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="your_username" required maxlength="31" />
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" required maxlength="200" />
+        </label>
+        <button class="btn primary" type="submit">Sign in</button>
+        <p class="form-error" id="signin-error" hidden></p>
+      </form>
+      <h3>New here, or forgot your password?</h3>
+      <p>DM us the word <b>key</b> on Instagram and we'll send you a sign-in link. Once you're in, you can set a password in ⚙️ Menu.</p>
+      ${cfg?.igHandle ? `<a class="btn" target="_blank" rel="noopener" href="${dmLink(cfg.igHandle)}">💬 DM @${esc(cfg.igHandle)}</a>` : ''}`;
+    const form = el.querySelector('#signin-form');
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const err = el.querySelector('#signin-error');
+      const btn = form.querySelector('button');
+      err.hidden = true;
+      btn.disabled = true;
+      try {
+        const data = new FormData(form);
+        await send('POST', '/api/auth/login', { username: String(data.get('username')).replace(/^@/, '').trim(), password: data.get('password') });
+        location.replace('/?home=1');
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+        btn.disabled = false;
+      }
+    };
+  });
+}
+
+// Set or change your password (signed in only).
+function openPassword() {
+  openSheet(me?.has_password ? 'Change my password' : 'Set a password', (el) => {
+    el.innerHTML = `
+      <p>Sign in on any device with <b>@${esc(me.username)}</b> and this password, without needing a new key. Use at least 8 characters, and don't reuse your Instagram password.</p>
+      <form id="pw-form" class="form">
+        <input name="username" autocomplete="username" value="${esc(me.username)}" hidden />
+        <label>New password
+          <input name="pw" type="password" autocomplete="new-password" minlength="8" maxlength="200" required />
+        </label>
+        <label>Type it again
+          <input name="pw2" type="password" autocomplete="new-password" minlength="8" maxlength="200" required />
+        </label>
+        <button class="btn primary" type="submit">Save password</button>
+        <p class="form-error" id="pw-error" hidden></p>
+      </form>`;
+    const form = el.querySelector('#pw-form');
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const err = el.querySelector('#pw-error');
+      const data = new FormData(form);
+      if (data.get('pw') !== data.get('pw2')) {
+        err.textContent = "The two passwords don't match.";
+        err.hidden = false;
+        return;
+      }
+      try {
+        await send('POST', '/api/auth/password', { password: data.get('pw') });
+        me = { ...me, has_password: true };
+        closeSheet();
+        ui.celebrate('Password saved 🔒 You can now sign in on any device.');
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+      }
+    };
+  });
+}
+
 // Walk the player to their own front door and open My house.
 function goHome() {
   if (!me) return openMyHouse();
@@ -327,14 +403,19 @@ function openMenu() {
       ${me && !me.demo ? `<label class="toggle"><input type="checkbox" id="m-hide" ${me.hidden ? 'checked' : ''} /> Hide my username (shows as “A neighbour”)</label>` : ''}
       <div class="stack">
         ${me ? '<button class="btn" id="m-decor">🪴 Decorate my yard</button>' : ''}
+        ${me && !me.demo ? `<button class="btn" id="m-password">🔒 ${me.has_password ? 'Change my password' : 'Set a password'}</button>` : ''}
+        ${!me && !isDemo() ? '<button class="btn primary" id="m-signin">Sign in</button>' : ''}
         ${me && !me.demo ? '<button class="btn" id="m-logout">Sign out</button><button class="btn danger" id="m-delete">Delete my house and account</button>' : ''}
         <a class="btn" href="/privacy">Privacy</a>
       </div>`;
     el.querySelector('#m-sound').onchange = (e) => setMuted(!e.target.checked);
     el.querySelector('#m-decor')?.addEventListener('click', openDecor);
+    el.querySelector('#m-password')?.addEventListener('click', openPassword);
+    el.querySelector('#m-signin')?.addEventListener('click', openSignIn);
     el.querySelector('#m-hide')?.addEventListener('change', async (e) => {
       try {
-        ({ resident: me } = await send('PATCH', '/api/me', { hidden: e.target.checked }));
+        const { resident } = await send('PATCH', '/api/me', { hidden: e.target.checked });
+        me = { ...me, ...resident };
         renderMe();
         world.refreshBlock(blockOfHouse(me.id));
         ui.toast(me.hidden ? 'Your name is hidden' : 'Your name is visible');
@@ -436,9 +517,11 @@ async function boot() {
   document.title = `${cfg.townName}: a home for every follower`;
   $('town-name').textContent = cfg.townName;
   $('demo-badge').hidden = !isDemo();
-  const keyBtn = $('key-btn');
-  if (cfg.igHandle) keyBtn.href = dmLink(cfg.igHandle);
-  else keyBtn.onclick = (e) => (e.preventDefault(), ui.toast(isDemo() ? 'Sign-in is off in demo mode' : 'Instagram sign-in is coming soon'));
+  $('key-btn').onclick = (e) => {
+    e.preventDefault();
+    if (isDemo()) return ui.toast('Sign-in is off in demo mode');
+    openSignIn();
+  };
 
   await refreshStats();
   setInterval(refreshStats, 60000);
@@ -457,6 +540,7 @@ async function boot() {
   if (me && params.has('home')) {
     goToHouse(me.id);
     ui.celebrate(`Welcome home, @${me.username}! 🏠`);
+    if (!me.has_password && !me.demo) setTimeout(() => ui.toast('Tip: set a password in ⚙️ Menu to sign in on any device without a new key.'), 3500);
     history.replaceState(null, '', '/');
   }
 
@@ -494,4 +578,4 @@ requestAnimationFrame(frame);
 boot();
 
 // Expose a tiny debug handle in development only.
-if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA };
+if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, openSignIn, openPassword, setMe: (m) => (me = m) };

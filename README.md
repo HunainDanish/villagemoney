@@ -72,6 +72,16 @@ After that, DMs saying "key" get a link automatically, and 🏠 comments build h
 
 If you already ran `schema.sql` before the game update, run **`supabase/002_game.sql`** once in Supabase → SQL Editor. It adds the `progress` table and the `last_active` column. Until you run it, signing in will fail.
 
+## Passwords (optional sign-in without a new key)
+
+Run **`supabase/003_passwords.sql`** once in Supabase → SQL Editor.
+
+- **First sign-in** is always with a house key: that is what proves someone owns the Instagram account.
+- **Setting a password:** after that, residents can set one in ⚙️ Menu → **Set a password**, then sign in from any device with **🔑 Sign in** and their username + password.
+- **How it is stored:** only a salted scrypt hash, never the password itself.
+- **Wrong guesses:** after 5 wrong passwords the account locks for 15 minutes. A house key still works during a lock.
+- **Forgot the password?** DM "key" for a new link, then set a new password.
+
 ## The game
 
 | Activity | Where | Reward |

@@ -9,6 +9,7 @@ import { applyForResident } from '../lib/progress.js';
 
 const MIGRATION_HINT =
   'Your database needs the game update: run supabase/002_game.sql in Supabase → SQL Editor. Until then progress is not saved.';
+const PASSWORD_HINT = 'Passwords need a database update: run supabase/003_passwords.sql in Supabase → SQL Editor.';
 
 export async function GET(request) {
   if (!hasDb()) return json({ resident: null });
@@ -20,11 +21,11 @@ export async function GET(request) {
     return errorJson(`Could not check your sign-in: ${e.message || 'database error'}`, 500);
   }
   if (!resident) return json({ resident: null });
-  if (resident.needsMigration) {
-    const { needsMigration, ...rest } = resident;
-    void needsMigration;
-    return json({ resident: rest, state: null, events: [], warning: MIGRATION_HINT });
+  const { missingMigration, ...publicResident } = resident;
+  if (missingMigration === '002_game.sql') {
+    return json({ resident: publicResident, state: null, events: [], warning: MIGRATION_HINT });
   }
+  const passwordWarning = missingMigration === '003_passwords.sql' ? PASSWORD_HINT : undefined;
 
   // Porch light: mark today as visited (one small write per resident per day).
   const today = new Date().toISOString().slice(0, 10);
@@ -41,9 +42,9 @@ export async function GET(request) {
   } catch (e) {
     console.error('checkin failed', e); // the town still works without progress
     const missing = /progress|relation|schema cache/i.test(e.message || '');
-    return json({ resident, state: null, events: [], warning: missing ? MIGRATION_HINT : 'Could not load your progress right now.' });
+    return json({ resident: publicResident, state: null, events: [], warning: missing ? MIGRATION_HINT : 'Could not load your progress right now.' });
   }
-  return json({ resident, state, events });
+  return json({ resident: publicResident, state, events, warning: passwordWarning });
 }
 
 export async function PATCH(request) {

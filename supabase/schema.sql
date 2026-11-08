@@ -87,3 +87,9 @@ create table if not exists progress (
   updated_at  timestamptz not null default now()
 );
 alter table progress enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Optional password sign-in (same as 003_passwords.sql)
+alter table residents add column if not exists password_hash text;
+alter table residents add column if not exists failed_logins smallint not null default 0;
+alter table residents add column if not exists locked_until timestamptz;
