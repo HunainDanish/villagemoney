@@ -47,9 +47,9 @@ export const PAINT_PRICE = 40;
 // bungalow). Each tier is a bigger house that every visitor can see.
 export const HOUSE_TIERS = [
   { tier: 1, name: 'Starter home', blurb: 'A cosy cottage, cabin or bungalow.' },
-  { tier: 2, name: 'Family home', blurb: 'Wider, with a covered front porch and a dormer window.', cost: { log: 20, stone: 10, coins: 100 } },
-  { tier: 3, name: 'Two-storey house', blurb: 'A second floor, more windows and a door canopy.', cost: { log: 40, stone: 25, coins: 250 } },
-  { tier: 4, name: 'Manor', blurb: 'Columns, a balcony, a garage wing and two chimneys.', cost: { log: 80, stone: 50, coins: 600 } },
+  { tier: 2, name: 'Family home', blurb: 'Wider, with a covered front porch and a dormer window.', cost: { log: 30, stone: 15, coins: 150 } },
+  { tier: 3, name: 'Two-storey house', blurb: 'A second floor, more windows and a door canopy.', cost: { log: 90, stone: 60, coins: 600, lantern: 2 } },
+  { tier: 4, name: 'Manor', blurb: 'Columns, a balcony, a garage wing and two chimneys.', cost: { log: 200, stone: 150, coins: 1500, bench: 1 } },
 ];
 export const WALL_PAINTS = [0xf6e7d0, 0xf2c6b4, 0xcfe5f2, 0xfff1a8, 0xd9f0c9, 0xe8d5f5, 0xfad2d2, 0xffffff, 0x9fb7d9, 0xc9a27e];
 export const ROOF_PAINTS = [0xc0504d, 0x4f6d9a, 0x5b8c5a, 0x8a5a44, 0x3e3e4a, 0xd98c3f, 0x7b5ea7, 0x2f7f86];
@@ -255,7 +255,7 @@ export function applyAction(s, action, ctx) {
       const next = HOUSE_TIERS[s.tier || 1]; // tiers are 1-based
       if (!next) return fail('your house is fully upgraded');
       const { coins = 0, ...mats } = next.cost;
-      for (const [item, n] of Object.entries(mats)) if ((s.items[item] || 0) < n) return fail(`you need ${n} ${ITEMS[item].name.toLowerCase()}s`);
+      for (const [item, n] of Object.entries(mats)) if ((s.items[item] || 0) < n) return fail(`you need ${n} × ${ITEMS[item].name.toLowerCase()}`);
       if (s.coins < coins) return fail(`you need ${coins} coins`);
       for (const [item, n] of Object.entries(mats)) s.items[item] -= n;
       s.coins -= coins;

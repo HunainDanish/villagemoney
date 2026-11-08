@@ -23,6 +23,9 @@ const CAPACITY = BLOCKS * HOUSES_PER_BLOCK;
 const MOBILE = matchMedia('(pointer: coarse)').matches;
 
 const DAY_GLASS = new THREE.Color(0x58708c);
+// Unpainted houses: muted colours that are NOT in the shop palette.
+const DEFAULT_WALLS = [0xeee6d8, 0xe3d5c0, 0xdfe3e6, 0xe9dccf, 0xd8cfc4, 0xf2ede4];
+const DEFAULT_ROOFS = [0x6e5a4e, 0x5d6168, 0x7a4e3f, 0x55604f, 0x6b5f57];
 const NIGHT_GLASS = new THREE.Color(0x1d2433);
 const WARM = new THREE.Color(0xffc56b);
 
@@ -513,8 +516,8 @@ export class World {
         this.yards.setMatrixAt(this.drawnAll.length, m);
         const wall = h.p?.wall ?? null;
         const roof = h.p?.roof ?? null;
-        st.walls.setColorAt(i, c.setHex(wall !== null ? WALL_PAINTS[wall] ?? WALL_PAINTS[0] : WALL_PAINTS[(seed >>> 4) % 8]));
-        st.roof.setColorAt(i, c.setHex(roof !== null ? ROOF_PAINTS[roof] ?? ROOF_PAINTS[0] : ROOF_PAINTS[(seed >>> 8) % 7]));
+        st.walls.setColorAt(i, c.setHex(wall !== null ? WALL_PAINTS[wall] ?? WALL_PAINTS[0] : DEFAULT_WALLS[(seed >>> 4) % DEFAULT_WALLS.length]));
+        st.roof.setColorAt(i, c.setHex(roof !== null ? ROOF_PAINTS[roof] ?? ROOF_PAINTS[0] : DEFAULT_ROOFS[(seed >>> 8) % DEFAULT_ROOFS.length]));
         // Porch light beside the door.
         const pl = toWorld(p, meta.porch[0], meta.porch[2]);
         m.makeTranslation(pl.x, meta.porch[1] + 0.3, pl.z);
@@ -714,11 +717,12 @@ export class World {
       }
     }
     chimneys.sort((a, b) => a[0] - b[0]);
-    const srcs = chimneys.slice(0, 10).map(([, h]) => {
-      const [cx, cy, cz] = this.styles[h.style].meta.chimney;
-      const w = toWorld({ x: h.x, z: h.z, facing: h.facing }, cx, cz);
-      return [w.x, cy + 0.3, w.z];
-    });
+    const srcs = chimneys.slice(0, 8).flatMap(([, h]) =>
+      (this.styles[h.style].meta.chimneys || []).map(([cx, cy, cz]) => {
+        const w = toWorld({ x: h.x, z: h.z, facing: h.facing }, cx, cz);
+        return [w.x, cy + 0.3, w.z];
+      }),
+    ).slice(0, 10);
     let si = 0;
     for (const p of this.smokePuffs) {
       p.t += dt;
@@ -764,7 +768,7 @@ export class World {
     const sz = Math.round(lz / PLOT + (BLOCK_SIDE - 1) / 2);
     if (sx < 0 || sz < 0 || sx >= BLOCK_SIDE || sz >= BLOCK_SIDE) return false;
     const id = b * HOUSES_PER_BLOCK + sz * BLOCK_SIDE + sx + 1;
-    const h = this.houses.get(id);
+    const h = this.houses.get(id) || (this.overrides.has(id) ? { id } : null);
     if (h) {
       // Footprint of this house's model, in the house's own frame.
       const tier = this.overrides.get(id)?.t ?? h.t ?? 1;
@@ -776,7 +780,7 @@ export class World {
       const sn = Math.sin(p.facing);
       const ux = dx * c - dz * sn;
       const uz = dx * sn + dz * c;
-      if (Math.abs(ux - (meta.cx || 0)) < meta.hx && Math.abs(uz) < meta.hz) return true;
+      if (Math.abs(ux - (meta.cx || 0)) < meta.hx && Math.abs(uz - (meta.cz || 0)) < meta.hz) return true;
     }
     // Nodes of this plot and the plot behind it (shared back garden).
     const neighbours = [id, id - BLOCK_SIDE, id + BLOCK_SIDE].filter((n) => n >= 1);

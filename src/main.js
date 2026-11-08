@@ -23,6 +23,7 @@ const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const world = new World($('scene'));
 const particles = new Particles(world.scene);
 const store = new Store();
+store.onNotice = (msg) => ui.toast(msg);
 let me = null;
 let cfg = null;
 

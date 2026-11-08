@@ -41,7 +41,7 @@ function paint(geo, hex = 0xffffff, ao = false) {
   const pos = g.attributes.position;
   const arr = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
-    const k = ao ? 0.72 + 0.28 * Math.min(1, Math.max(0, pos.getY(i) / 2.2)) : 1;
+    const k = ao ? 0.82 + 0.18 * Math.min(1, Math.max(0, pos.getY(i) / 2.2)) : 1;
     arr.set([c.r * k, c.g * k, c.b * k], i * 3);
   }
   g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
@@ -112,13 +112,13 @@ function windowOn(out, { x, y, z, w = 1.3, h = 1.5, face = 'z', shutters = true,
   const add = (geo, col) => details.push(paint(geo, col));
   if (face === 'z') {
     add(box(w + 0.32, h + 0.32, d, x, y, z), COL.trim); // frame
-    glass.push(paint(box(w, h, d, x, y, z + 0.04)));
+    glass.push(paint(box(w, h, 0.06, x, y, z + 0.02)));
     add(box(0.08, h, d + 0.04, x, y, z + 0.06), COL.trim); // mullions
     add(box(w, 0.08, d + 0.04, x, y, z + 0.06), COL.trim);
     add(box(w + 0.6, 0.14, 0.4, x, y - h / 2 - 0.2, z + 0.12), COL.trim); // sill
     if (shutters) {
-      add(box(0.45, h + 0.2, 0.1, x - w / 2 - 0.42, y, z + 0.02), COL.shutter);
-      add(box(0.45, h + 0.2, 0.1, x + w / 2 + 0.42, y, z + 0.02), COL.shutter);
+      add(box(0.45, h + 0.2, 0.1, x - w / 2 - 0.39, y, z + 0.02), COL.shutter);
+      add(box(0.45, h + 0.2, 0.1, x + w / 2 + 0.39, y, z + 0.02), COL.shutter);
     }
     if (planter) {
       add(box(w + 0.3, 0.35, 0.45, x, y - h / 2 - 0.45, z + 0.3), COL.wood);
@@ -129,19 +129,27 @@ function windowOn(out, { x, y, z, w = 1.3, h = 1.5, face = 'z', shutters = true,
   } else {
     const s = Math.sign(x);
     add(box(d, h + 0.32, w + 0.32, x, y, z), COL.trim);
-    glass.push(paint(box(d, h, w, x + s * 0.04, y, z)));
+    glass.push(paint(box(0.06, h, w, x + s * 0.02, y, z)));
     add(box(d + 0.04, h, 0.08, x + s * 0.06, y, z), COL.trim);
     add(box(d + 0.04, 0.08, w, x + s * 0.06, y, z), COL.trim);
     add(box(0.4, 0.14, w + 0.6, x + s * 0.12, y - h / 2 - 0.2, z), COL.trim);
   }
 }
 
-function door(out, { x, z, color = COL.door, h = 3.0, w = 1.5 }) {
+// Doors sit on top of the 0.5 foundation, 3.4 tall (characters are ~2.9).
+function door(out, { x, z, color = COL.door, h = 3.4, w = 1.5 }) {
   const { details } = out;
-  details.push(paint(box(w + 0.4, h + 0.25, 0.14, x, h / 2 + 0.05, z), COL.trim)); // frame
-  details.push(paint(box(w, h, 0.18, x, h / 2, z + 0.03), color));
-  details.push(paint(box(w * 0.6, h * 0.3, 0.05, x, h * 0.68, z + 0.13), 0xf6e2b0)); // glass light
-  details.push(paint(box(0.16, 0.16, 0.12, x + w * 0.33, h * 0.45, z + 0.16), 0xe0b84a)); // knob
+  const b = 0.5;
+  details.push(paint(box(w + 0.4, h + 0.25, 0.14, x, b + h / 2 + 0.05, z), COL.trim)); // frame
+  details.push(paint(box(w, h, 0.18, x, b + h / 2, z + 0.03), color));
+  details.push(paint(box(w * 0.6, h * 0.3, 0.05, x, b + h * 0.68, z + 0.13), 0xf6e2b0)); // glass light
+  details.push(paint(box(0.16, 0.16, 0.12, x + w * 0.33, b + h * 0.45, z + 0.16), 0xe0b84a)); // knob
+}
+
+// Wall lamp bracket; the glowing bulb itself is drawn by world.js.
+function lampBracket(out, x, y, wallZ) {
+  out.details.push(paint(box(0.12, 0.12, 0.34, x, y + 0.25, wallZ + 0.17), COL.dark));
+  out.details.push(paint(box(0.34, 0.08, 0.34, x, y + 0.36, wallZ + 0.34), COL.dark));
 }
 
 function steps(out, { x, z, w = 2.4 }) {
@@ -159,7 +167,7 @@ function path(out, x, from) {
 function chimney(out, x, z, top) {
   out.details.push(paint(box(1.0, top, 1.0, x, top / 2, z), COL.brick, true));
   out.details.push(paint(box(1.2, 0.25, 1.2, x, top + 0.1, z), COL.dark));
-  out.meta.chimney = [x, top + 0.4, z];
+  (out.meta.chimneys ||= []).push([x, top + 0.4, z]);
 }
 
 // Walls: a body box with foundation, corner boards and a top band.
@@ -177,13 +185,12 @@ function body(out, w, h, d, { x = 0, z = 0, y = 0, foundation = 0.5, corners = t
 
 function porchRoof(out, { x = 0, z, w, d, y, columns = 2 }) {
   out.details.push(paint(box(w, 0.35, 0.18, x, y, z + d), COL.trim));
-  out.roof.push(box(w + 0.4, 0.3, d + 0.5, x, y + 0.3, z + d / 2).rotateX(0));
-  const step = w / (columns - 1 || 1);
+  // Sloped slab: high at the wall, low at the front beam.
+  out.roof.push(new THREE.BoxGeometry(w + 0.4, 0.3, d + 0.5).rotateX(0.22).translate(x, y + 0.45, z + d / 2));
   for (let i = 0; i < columns; i++) {
     const cx = x - w / 2 + 0.25 + i * ((w - 0.5) / (columns - 1 || 1));
     out.details.push(paint(new THREE.CylinderGeometry(0.17, 0.2, y, 8).translate(cx, y / 2, z + d - 0.2), COL.trim));
   }
-  void step;
   out.details.push(paint(box(w, 0.3, d + 0.2, x, 0.3, z + d / 2), COL.wood, true)); // deck
 }
 
@@ -206,21 +213,22 @@ function cottage() {
   door(out, { x: 0, z: 3.12, color: COL.doorGreen });
   steps(out, { x: 0, z: 3.25 });
   path(out, 0, 4.1);
-  windowOn(out, { x: -2.3, y: 2.7, z: 3.1, planter: true });
-  windowOn(out, { x: 2.3, y: 2.7, z: 3.1, planter: true });
-  windowOn(out, { x: 3.62, y: 2.7, z: 0, face: 'x' });
-  windowOn(out, { x: -3.62, y: 2.7, z: 0, face: 'x' });
+  windowOn(out, { x: -2.2, y: 3.0, z: 3.1, w: 1.1, planter: true });
+  windowOn(out, { x: 2.2, y: 3.0, z: 3.1, w: 1.1, planter: true });
+  windowOn(out, { x: 3.62, y: 3.0, z: 0, face: 'x' });
+  windowOn(out, { x: -3.62, y: 3.0, z: 0, face: 'x' });
+  lampBracket(out, 0, 4.15, 3.1);
   chimney(out, 2.3, -1.3, top + 3.2);
   shrubs(out, [[-3.2, 3.9], [3.2, 3.9]]);
-  Object.assign(out.meta, { porch: [1.35, 3.35, 3.4], height: top + 4.2, hx: 4.0, hz: 3.6 });
+  Object.assign(out.meta, { porch: [0, 4.3, 3.45], height: top + 4.2, hx: 4.0, hz: 3.6 });
   return out;
 }
 
 function cabin() {
   const out = { walls: [], roof: [], details: [], glass: [], meta: {} };
-  const top = body(out, 6.4, 3.4, 7, { corners: false });
+  const top = body(out, 6.4, 4.0, 7, { corners: false });
   // Log courses: dark grooves across the walls.
-  for (let i = 1; i < 6; i++) {
+  for (let i = 1; i < 7; i++) {
     const y = 0.5 + i * 0.6;
     out.details.push(paint(box(6.5, 0.07, 7.1, 0, y, 0), 0x6b4429));
   }
@@ -229,13 +237,14 @@ function cabin() {
   out.roof.push(...r.roof);
   out.details.push(...r.trim.map((g) => paint(g, COL.wood)));
   door(out, { x: 0, z: 3.55, color: COL.door });
-  windowOn(out, { x: -1.9, y: 2.3, z: 3.53, w: 1.1, h: 1.2, shutters: false });
-  windowOn(out, { x: 1.9, y: 2.3, z: 3.53, w: 1.1, h: 1.2, shutters: false });
+  windowOn(out, { x: -2.0, y: 2.7, z: 3.53, w: 1.1, h: 1.2, shutters: false });
+  windowOn(out, { x: 2.0, y: 2.7, z: 3.53, w: 1.1, h: 1.2, shutters: false });
   windowOn(out, { x: 0, y: top + 1.4, z: 3.53, w: 1.0, h: 1.0, shutters: false });
-  porchRoof(out, { z: 3.5, w: 6.4, d: 1.8, y: 3.1, columns: 2 });
+  porchRoof(out, { z: 3.5, w: 6.4, d: 1.8, y: 4.2, columns: 2 });
+  out.details.push(paint(box(0.06, 0.45, 0.06, 1.3, 4.25, 4.55), COL.dark)); // lantern chain
   path(out, 0, 5.3);
   chimney(out, -2.0, -1.8, top + 3.4);
-  Object.assign(out.meta, { porch: [1.4, 3.0, 3.9], height: top + 5, hx: 3.6, hz: 4.2 });
+  Object.assign(out.meta, { porch: [1.3, 3.9, 4.55], height: top + 5, hx: 3.6, hz: 4.7, cz: 0.7 });
   return out;
 }
 
@@ -251,9 +260,10 @@ function bungalow() {
   windowOn(out, { x: 1.2, y: 2.6, z: 3.2, w: 3.0, h: 1.6, shutters: false, planter: true });
   windowOn(out, { x: 4.22, y: 2.6, z: 0, face: 'x' });
   windowOn(out, { x: -4.22, y: 2.6, z: 0, face: 'x' });
-  chimney(out, -2.6, -1.4, top + 2.6);
+  chimney(out, -2.6, -1.4, top + 3.0);
   shrubs(out, [[3.8, 3.9, 0.6], [-4.2, 3.8, 0.6]]);
-  Object.assign(out.meta, { porch: [-1.25, 3.25, 3.5], height: top + 3.6, hx: 4.6, hz: 3.7 });
+  lampBracket(out, -1.0, 3.4, 3.2);
+  Object.assign(out.meta, { porch: [-1.0, 3.55, 3.55], height: top + 3.6, hx: 4.6, hz: 3.7 });
   return out;
 }
 
@@ -265,18 +275,22 @@ function familyHome() {
   out.roof.push(...r.roof.map((g) => g.rotateY(Math.PI / 2)));
   out.details.push(...r.trim.map((g) => paint(g.rotateY(Math.PI / 2), COL.trim)));
   // Dormer window in the roof.
-  out.walls.push(paint(box(1.8, 1.5, 1.6, 0, top + 1.0, 2.2), 0xffffff, false));
-  out.roof.push(box(2.3, 0.25, 2.1, 0, top + 1.9, 2.2));
-  windowOn(out, { x: 0, y: top + 0.95, z: 3.02, w: 1.0, h: 0.9, shutters: false });
-  porchRoof(out, { z: 3.3, w: 8.6, d: 2.0, y: 3.4, columns: 4 });
+  out.walls.push(paint(box(1.8, 1.9, 1.6, 0, top + 1.15, 2.2), 0xffffff, false));
+  out.roof.push(box(2.3, 0.25, 2.1, 0, top + 2.2, 2.2));
+  windowOn(out, { x: 0, y: top + 1.35, z: 3.02, w: 1.0, h: 0.8, shutters: false });
+  porchRoof(out, { z: 3.3, w: 8.6, d: 1.6, y: 4.3, columns: 4 });
   door(out, { x: 0, z: 3.32, color: 0x8a2b2b });
-  path(out, 0, 5.3);
-  windowOn(out, { x: -2.8, y: 2.8, z: 3.3 });
-  windowOn(out, { x: 2.8, y: 2.8, z: 3.3 });
+  path(out, 0, 5.1);
+  windowOn(out, { x: -2.8, y: 2.6, z: 3.3, h: 1.3 });
+  windowOn(out, { x: 2.8, y: 2.6, z: 3.3, h: 1.3 });
+  out.details.push(paint(box(0.06, 0.4, 0.06, 0, 4.25, 4.3), COL.dark)); // lamp chain
   windowOn(out, { x: 4.32, y: 2.8, z: -0.5, face: 'x' });
   windowOn(out, { x: -4.32, y: 2.8, z: -0.5, face: 'x' });
   chimney(out, -2.8, -1.6, top + 3.4);
-  Object.assign(out.meta, { porch: [1.2, 3.2, 5.0], height: top + 4.4, hx: 4.6, hz: 3.6 });
+  Object.assign(out.meta, {
+    porch: [0, 3.95, 4.3], height: top + 4.4, hx: 4.6, hz: 4.3, cz: 0.6,
+    slots: [[-5.6, 6.4], [5.4, 6.3], [-6.3, 2.4], [6.3, 2.4], [-6.6, -2.0], [6.6, -2.0]],
+  });
   return out;
 }
 
@@ -292,14 +306,15 @@ function twoStorey() {
   door(out, { x: 0, z: 3.32, color: COL.doorBlue });
   steps(out, { x: 0, z: 3.45 });
   path(out, 0, 4.3);
-  out.details.push(paint(box(2.6, 0.2, 1.3, 0, 3.75, 3.9), COL.trim)); // door canopy
-  out.details.push(paint(box(0.12, 0.8, 0.12, -1.2, 3.35, 4.45), COL.trim));
-  out.details.push(paint(box(0.12, 0.8, 0.12, 1.2, 3.35, 4.45), COL.trim));
-  windowOn(out, { x: -2.6, y: 2.5, z: 3.3, planter: true });
-  windowOn(out, { x: 2.6, y: 2.5, z: 3.3, planter: true });
+  out.details.push(paint(box(2.6, 0.2, 1.3, 0, 4.15, 3.95), COL.trim)); // door canopy
+  out.details.push(paint(box(0.12, 0.6, 0.5, -1.2, 3.8, 3.55), COL.trim)); // canopy brackets
+  out.details.push(paint(box(0.12, 0.6, 0.5, 1.2, 3.8, 3.55), COL.trim));
+  windowOn(out, { x: -2.4, y: 2.6, z: 3.3, w: 1.2, shutters: false, planter: true });
+  windowOn(out, { x: 2.4, y: 2.6, z: 3.3, w: 1.2, shutters: false, planter: true });
   windowOn(out, { x: -2.3, y: 6.0, z: 3.3 });
-  windowOn(out, { x: 0, y: 6.0, z: 3.3, w: 1.0 });
+  windowOn(out, { x: 0, y: 6.0, z: 3.3, w: 1.0, shutters: false });
   windowOn(out, { x: 2.3, y: 6.0, z: 3.3 });
+  lampBracket(out, 1.35, 3.0, 3.3);
   windowOn(out, { x: 0, y: top + 1.2, z: 3.3, w: 0.9, h: 0.9, shutters: false });
   for (const s of [-1, 1]) {
     windowOn(out, { x: s * 3.82, y: 2.5, z: 0, face: 'x' });
@@ -307,7 +322,7 @@ function twoStorey() {
   }
   chimney(out, 2.6, -1.5, top + 3.6);
   shrubs(out, [[-3.6, 4.0], [3.6, 4.0]]);
-  Object.assign(out.meta, { porch: [1.4, 3.35, 3.6], height: top + 4.6, hx: 4.2, hz: 3.6 });
+  Object.assign(out.meta, { porch: [1.35, 3.15, 3.65], height: top + 4.6, hx: 4.2, hz: 3.6 });
   return out;
 }
 
@@ -328,7 +343,7 @@ function manor() {
   out.details.push(paint(box(2.8, 3.0, 0.14, 4.6, 2.0, 2.72), COL.trim));
   for (let i = 0; i < 4; i++) out.details.push(paint(box(2.5, 0.6, 0.08, 4.6, 0.95 + i * 0.68, 2.82), 0xe9e4da));
   // Portico with columns and a balcony over the door.
-  door(out, { x: -1.0, z: 3.52, color: 0x2f3a56, w: 1.8, h: 3.2 });
+  door(out, { x: -1.0, z: 3.52, color: 0x2f3a56, w: 1.8, h: 3.6 });
   steps(out, { x: -1.0, z: 3.6, w: 3.6 });
   path(out, -1.0, 5.6);
   // Driveway in front of the garage.
@@ -337,20 +352,21 @@ function manor() {
   for (let i = 0; i < 6; i++) out.details.push(paint(box(0.1, 0.8, 0.1, -2.8 + i * 0.72, 4.95, 5.2), COL.trim));
   out.details.push(paint(box(4.0, 0.12, 0.12, -1.0, 5.38, 5.2), COL.trim));
   for (const x of [-2.7, 0.7]) out.details.push(paint(new THREE.CylinderGeometry(0.22, 0.26, 4.25, 10).translate(x, 2.3, 5.0), COL.trim));
-  windowOn(out, { x: -3.6, y: 2.6, z: 3.52 });
-  windowOn(out, { x: 1.6, y: 2.6, z: 3.52, w: 1.0 });
+  windowOn(out, { x: -3.3, y: 2.8, z: 3.52, w: 1.1 });
+  windowOn(out, { x: 1.6, y: 2.8, z: 3.52, w: 1.0, shutters: false });
   windowOn(out, { x: -1.0, y: 6.3, z: 3.52, w: 1.4, h: 1.8, shutters: false });
-  windowOn(out, { x: -3.6, y: 6.3, z: 3.52 });
-  windowOn(out, { x: 1.6, y: 6.3, z: 3.52, w: 1.0 });
+  windowOn(out, { x: -3.3, y: 6.3, z: 3.52, w: 1.1 });
+  windowOn(out, { x: 1.6, y: 6.3, z: 3.52, w: 1.0, shutters: false });
+  lampBracket(out, 0.45, 3.2, 3.52);
   windowOn(out, { x: -4.72, y: 2.6, z: 0, face: 'x' });
   windowOn(out, { x: -4.72, y: 6.3, z: 0, face: 'x' });
   chimney(out, -3.6, -2.0, top + 3.6);
   chimney(out, 1.6, -2.0, top + 3.6);
   shrubs(out, [[-5.0, 4.2, 0.65], [2.4, 4.3, 0.55], [6.6, 3.2, 0.55]]);
   Object.assign(out.meta, {
-    porch: [0.4, 3.3, 3.9], height: top + 4.2, hx: 5.8, hz: 3.8, cx: 0.6,
+    porch: [0.45, 3.35, 3.9], height: top + 4.2, hx: 5.95, hz: 4.5, cx: 0.75, cz: 0.8,
     // The garage wing and driveway take the right side, so decor shifts.
-    slots: [[-4.8, 5.6], [2.0, 6.1], [-6.6, 2.4], [7.2, 4.6], [-6.8, -2.0], [7.3, -2.8]],
+    slots: [[-4.8, 5.6], [2.0, 6.1], [-6.6, 2.4], [6.3, 6.0], [-6.8, -2.0], [6.9, -4.6]],
   });
   return out;
 }
@@ -360,6 +376,7 @@ export const MODEL_COUNT = BUILDERS.length;
 
 // Tier 1 houses vary between three small homes; upgrades replace them.
 export function modelFor(id, tier = 1, hash) {
+  tier = Number(tier) | 0;
   if (tier >= 4) return 5;
   if (tier === 3) return 4;
   if (tier === 2) return 3;

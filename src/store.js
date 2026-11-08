@@ -9,7 +9,7 @@ import { applyBatch, initialState } from '../shared/game.js';
 const KEY = 'pl_game_v1';
 const FLUSH_MS = 20000;
 const SERVER_DECIDES = new Set(['fish']);
-const URGENT = new Set(['craft', 'place', 'sell', 'paint', 'claim']);
+const URGENT = new Set(['craft', 'place', 'sell', 'paint', 'claim', 'upgrade']);
 
 function readLocal(key) {
   try {
@@ -122,7 +122,9 @@ export class Store {
         if (!res.ok || !data.state) throw new Error(data.error || 'sync failed');
         // Server state + anything queued while the request was in flight.
         const { state } = applyBatch(data.state, this.queue, this.ctx());
+        const downgraded = (state.tier || 1) < (this.state.tier || 1);
         this.state = state;
+        if (downgraded) this.onNotice?.('The server could not confirm your upgrade. Your materials are back in your bag.');
         const gained = [];
         for (const [item, n] of Object.entries(data.state.items || {})) {
           const d = n - (before[item] || 0);

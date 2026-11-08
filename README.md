@@ -82,7 +82,8 @@ If you already ran `schema.sql` before the game update, run **`supabase/002_game
 | 🎣 Fishing | Plaza pond: tap, wait for the bite, tap again | 5 fish (common to rare), plus the odd boot |
 | 🔨 Crafting | Workbench (plaza) | Fence, planter, bench, lantern, birdhouse, gnome |
 | 🪴 Decorating | Your house: 6 yard spots | Everyone walking by sees them |
-| 🪙 Market | Stall (plaza) | Sell items for coins, buy wall and roof paint |
+| 🪙 Market | Stall (plaza) | Sell items for coins |
+| 🏡 Upgrades and paint | **My house** (🏠 Home button) | Starter home → Family home → Two-storey house → Manor, paid in logs, stone, coins and crafted items. Wall and roof paint show on the spot |
 | 📜 Quests | Board (plaza) | 3 a day, plus a bonus for finishing all three |
 | 🔥 Streak and 🏮 porch light | Visit daily | Coin gift, and your porch light shines at night |
 
