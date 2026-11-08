@@ -491,6 +491,7 @@ function renderMe() {
   $('home-btn').hidden = !me;
   $('key-btn').hidden = Boolean(me);
   net.name = me && !me.hidden ? me.username : 'Neighbour';
+  player.setName(net.name);
 }
 
 // Show my own decor/paint right away (the shared CDN copy updates later).

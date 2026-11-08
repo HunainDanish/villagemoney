@@ -83,6 +83,19 @@ export class Player {
     });
   }
 
+  // Look like other players see you: characters are styled from the name.
+  setName(name) {
+    if (name === this.lookName) return;
+    this.lookName = name;
+    const old = this.char;
+    this.char = new Character({ seed: name, shadow: true });
+    this.char.heading = old.heading;
+    this.char.group.position.copy(old.group.position);
+    this.char.group.rotation.y = old.group.rotation.y;
+    this.world.scene.remove(old.group);
+    this.world.scene.add(this.char.group);
+  }
+
   // Walk to (x, z); call onArrive when within `range`.
   walkTo(x, z, range = 0.8, onArrive = null) {
     this.cancel();

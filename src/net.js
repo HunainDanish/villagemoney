@@ -72,18 +72,7 @@ export class Net {
       config: { broadcast: { self: false, ack: false }, presence: { key: this.id } },
     });
     ch.on('broadcast', { event: 'p' }, ({ payload }) => this.#receive(payload));
-    ch.on('presence', { event: 'sync' }, () => {
-      const state = ch.presenceState();
-      const ids = new Set(Object.keys(state));
-      this.others = Math.max(0, ids.size - (ids.has(this.id) ? 1 : 0));
-      for (const [id, metas] of Object.entries(state)) {
-        if (id === this.id || !metas[0]) continue;
-        this.#receive({ ...metas[0], i: id });
-        const peer = this.peers.get(id);
-        if (peer) peer.present = true; // still here, even if standing still
-      }
-      for (const id of [...this.peers.keys()]) if (!ids.has(id) && !id.startsWith('bot')) this.#remove(id);
-    });
+    ch.on('presence', { event: 'sync' }, () => this.#syncPresence());
     ch.subscribe((status, err) => {
       if (status === 'SUBSCRIBED') {
         this.status = 'live';
@@ -95,6 +84,25 @@ export class Net {
       }
     });
     this.channel = ch;
+  }
+
+  // Rebuild the list of people here from the presence state. Runs on every
+  // presence change, and every 5 s with onlyMissing (local state only, no
+  // messages) to bring back anyone a missed update left out. The periodic
+  // pass never moves people, so walkers aren't snapped back to where they stood.
+  #syncPresence(onlyMissing = false) {
+    const ch = this.channel;
+    if (!ch) return;
+    const state = ch.presenceState();
+    const ids = new Set(Object.keys(state));
+    this.others = Math.max(0, ids.size - (ids.has(this.id) ? 1 : 0));
+    for (const [id, metas] of Object.entries(state)) {
+      if (id === this.id || !metas[0]) continue;
+      if (!onlyMissing || !this.peers.has(id)) this.#receive({ ...metas[0], i: id });
+      const peer = this.peers.get(id);
+      if (peer) peer.present = true; // still here, even if standing still
+    }
+    for (const id of [...this.peers.keys()]) if (!ids.has(id) && !id.startsWith('bot')) this.#remove(id);
   }
 
   #receive(p) {
@@ -138,6 +146,10 @@ export class Net {
         this.#join(region, player);
       }
       const joined = this.channel?.state === 'joined';
+      if (joined && now - (this.lastResync || 0) > 5000) {
+        this.lastResync = now;
+        this.#syncPresence(true);
+      }
       if (joined && this.others > 0 && player.moving && now - this.lastSend > SEND_MOVING_MS) {
         this.lastSend = now;
         this.channel.send({ type: 'broadcast', event: 'p', payload: this.#me(player) });
