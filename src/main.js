@@ -214,7 +214,7 @@ function openQuests() {
   openSheet('Daily quests', (el) => {
     const s = store.state;
     const qs = dailyQuests(s.day, store.seed);
-    el.innerHTML = `<p>New quests every day. Finish all three for a 30 🪙 bonus. 🔥 Streak: ${s.streak || 0} days.</p>${qs
+    el.innerHTML = `<p>New quests every day. Finish all three for a 30 🪙 bonus. 🔥 Streak: ${s.streak || 0} day${s.streak === 1 ? '' : 's'}.</p>${qs
       .map((q, i) => {
         const prog = questProgress(s, q);
         const claimed = s.quests & (1 << i);
