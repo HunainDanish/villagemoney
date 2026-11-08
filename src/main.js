@@ -18,6 +18,12 @@ const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat();
 const LABELS = 32;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+// Phones: open a DM in the Instagram app. Desktop: ig.me DM links often show
+// "page isn't available", so open the profile, which has a Message button.
+const dmLink = (handle) =>
+  matchMedia('(pointer: coarse)').matches
+    ? `https://ig.me/m/${encodeURIComponent(handle)}`
+    : `https://www.instagram.com/${encodeURIComponent(handle)}/`;
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 
 const world = new World($('scene'));
@@ -205,7 +211,7 @@ function openMyHouse() {
   if (!me) {
     return openSheet('Your own house', (el) => {
       el.innerHTML = `<p>Every follower gets a house in town. ${isDemo() ? 'Sign-in is off in demo mode.' : 'DM us the word <b>key</b> on Instagram to get yours, then upgrade, paint and decorate it here.'}</p>
-        ${cfg?.igHandle ? `<a class="btn primary" target="_blank" rel="noopener" href="https://ig.me/m/${encodeURIComponent(cfg.igHandle)}">🔑 Get my house key</a>` : ''}`;
+        ${cfg?.igHandle ? `<a class="btn primary" target="_blank" rel="noopener" href="${dmLink(cfg.igHandle)}">🔑 Get my house key</a>` : ''}`;
     });
   }
   openSheet('My house', (el) => {
@@ -431,7 +437,7 @@ async function boot() {
   $('town-name').textContent = cfg.townName;
   $('demo-badge').hidden = !isDemo();
   const keyBtn = $('key-btn');
-  if (cfg.igHandle) keyBtn.href = `https://ig.me/m/${encodeURIComponent(cfg.igHandle)}`;
+  if (cfg.igHandle) keyBtn.href = dmLink(cfg.igHandle);
   else keyBtn.onclick = (e) => (e.preventDefault(), ui.toast(isDemo() ? 'Sign-in is off in demo mode' : 'Instagram sign-in is coming soon'));
 
   await refreshStats();

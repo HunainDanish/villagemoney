@@ -59,3 +59,12 @@ test('game actions require a signed-in resident', async () => {
   const res = await actions.POST(new Request('http://x', { method: 'POST', body: '{"actions":[]}' }));
   assert.equal(res.status, 401);
 });
+
+test('IG_HANDLE is cleaned up whatever format it was entered in', async () => {
+  const { cleanHandle } = await import('../api/config.js');
+  for (const raw of ['porch.town', '@porch.town', '  @Porch.Town ', 'https://www.instagram.com/porch.town/', 'instagram.com/porch.town?igsh=abc']) {
+    assert.equal(cleanHandle(raw), 'porch.town', raw);
+  }
+  assert.equal(cleanHandle(''), '');
+  assert.equal(cleanHandle(undefined), '');
+});
