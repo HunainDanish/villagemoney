@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Porchlight: a home for every follower</title>
+    <meta name="description" content="A tiny 3D town where every follower gets a house." />
+    <link rel="icon" href="/favicon.svg" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="labels"></div>
+
+    <header class="hud top">
+      <div class="brand">
+        <strong id="town-name">Porchlight</strong>
+        <span id="count">Loading the town…</span>
+      </div>
+      <form id="search" class="search" autocomplete="off">
+        <span>@</span>
+        <input id="search-input" placeholder="find a house" aria-label="Instagram username" maxlength="31" />
+        <button type="submit">Find</button>
+      </form>
+    </header>
+
+    <div id="demo-badge" class="badge" hidden>Demo mode · fake residents</div>
+
+    <footer class="hud bottom">
+      <div id="guest" class="row">
+        <a id="key-btn" class="btn primary" target="_blank" rel="noopener">🔑 Get my house key</a>
+      </div>
+      <div id="member" class="row" hidden>
+        <button id="home-btn" class="btn primary">🏠 My house</button>
+        <button id="settings-btn" class="btn">⚙️</button>
+      </div>
+      <p class="hint">WASD or tap to walk · drag to turn · scroll to zoom · <span id="online">0</span> nearby</p>
+    </footer>
+
+    <div id="card" class="card" hidden>
+      <button class="close" aria-label="Close">✕</button>
+      <h2 id="card-name"></h2>
+      <p id="card-num"></p>
+      <a id="card-ig" class="btn" target="_blank" rel="noopener">Open on Instagram</a>
+    </div>
+
+    <div id="settings" class="card" hidden>
+      <button class="close" aria-label="Close">✕</button>
+      <h2>My house</h2>
+      <p id="me-line"></p>
+      <label class="toggle"><input type="checkbox" id="hide-toggle" /> Hide my username (shows as “A neighbour”)</label>
+      <button id="logout-btn" class="btn">Sign out</button>
+      <button id="delete-btn" class="btn danger">Delete my house and account</button>
+      <p class="small"><a href="/privacy">Privacy</a></p>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Town admin</title>
+    <link rel="icon" href="/favicon.svg" />
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; color: #1f2430; background: #f4f6fa; padding: 16px; }
+      main { max-width: 640px; margin: 0 auto; display: grid; gap: 16px; }
+      section { background: #fff; border-radius: 14px; padding: 18px; box-shadow: 0 2px 10px rgba(0,0,0,.05); }
+      h1 { font-size: 22px; margin: 0; } h2 { font-size: 16px; margin: 0 0 10px; }
+      form { display: flex; gap: 8px; flex-wrap: wrap; }
+      input { flex: 1; min-width: 0; padding: 10px; border: 1px solid #d5d9e2; border-radius: 10px; font: inherit; }
+      button { padding: 10px 16px; border: 0; border-radius: 10px; background: #1f2430; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+      button.ghost { background: #eef0f5; color: #1f2430; }
+      .link { margin-top: 12px; padding: 12px; background: #fff7ef; border-radius: 10px; word-break: break-all; font-size: 14px; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      td, th { text-align: left; padding: 6px 4px; border-bottom: 1px solid #eef0f5; }
+      .muted { color: #5b6272; font-size: 13px; }
+      .err { color: #c0392b; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Town admin</h1>
+      <section>
+        <h2>Admin secret</h2>
+        <form id="auth"><input id="secret" type="password" placeholder="ADMIN_SECRET from your Vercel settings" autocomplete="off" /><button>Unlock</button></form>
+        <p class="muted">Kept only in this browser tab.</p>
+      </section>
+      <section>
+        <h2>Give someone a house key</h2>
+        <p class="muted">Until Instagram is connected: when someone DMs you “key”, enter their username here and paste the link back into the DM. Check the DM really comes from that account.</p>
+        <form id="create"><input id="username" placeholder="instagram_username" autocomplete="off" /><button>Create key</button></form>
+        <div id="result"></div>
+      </section>
+      <section>
+        <h2>Latest residents</h2>
+        <button class="ghost" id="reload">Refresh</button>
+        <table><thead><tr><th>#</th><th>Username</th><th>Source</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+      </section>
+    </main>
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      let secret = sessionStorage.getItem('adminSecret') || '';
+      $('secret').value = secret;
+
+      async function call(method, path, body) {
+        const res = await fetch(path, {
+          method,
+          headers: { 'content-type': 'application/json', 'x-admin-secret': secret },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        return data;
+      }
+
+      const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+      async function list() {
+        try {
+          const { residents } = await call('GET', '/api/admin/residents');
+          $('rows').innerHTML = residents
+            .map((r) => `<tr><td>${r.id}</td><td>@${esc(r.username)}${r.hidden ? ' (hidden)' : ''}</td><td>${esc(r.source)}</td><td><button class="ghost" data-u="${esc(r.username)}">Remove</button></td></tr>`)
+            .join('');
+        } catch (e) {
+          $('rows').innerHTML = `<tr><td colspan="4" class="err">${esc(e.message)}</td></tr>`;
+        }
+      }
+
+      $('auth').onsubmit = (e) => {
+        e.preventDefault();
+        secret = $('secret').value.trim();
+        sessionStorage.setItem('adminSecret', secret);
+        list();
+      };
+      $('reload').onclick = list;
+
+      $('create').onsubmit = async (e) => {
+        e.preventDefault();
+        $('result').innerHTML = '';
+        try {
+          const r = await call('POST', '/api/admin/create', { username: $('username').value });
+          $('result').innerHTML = `<div class="link"><b>@${esc(r.username)}</b> · House #${r.id}<br><br><span id="lnk">${esc(r.link)}</span><br><br><button id="copy">Copy link</button></div>`;
+          $('copy').onclick = async () => {
+            await navigator.clipboard.writeText(r.link);
+            $('copy').textContent = 'Copied';
+          };
+          $('username').value = '';
+          list();
+        } catch (err) {
+          $('result').innerHTML = `<p class="err">${esc(err.message)}</p>`;
+        }
+      };
+
+      $('rows').onclick = async (e) => {
+        const u = e.target.dataset?.u;
+        if (!u || !confirm(`Remove @${u}'s house? This deletes their account.`)) return;
+        try {
+          await call('DELETE', `/api/admin/residents?u=${encodeURIComponent(u)}`);
+          list();
+        } catch (err) {
+          alert(err.message);
+        }
+      };
+
+      if (secret) list();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Your house key</title>
+    <link rel="icon" href="/favicon.svg" />
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #bfe3ff; font-family: system-ui, sans-serif; color: #1f2430; padding: 16px; box-sizing: border-box; }
+      main { background: #fff; border-radius: 18px; padding: 28px; max-width: 360px; width: 100%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.15); }
+      h1 { font-size: 22px; margin: 8px 0; }
+      p { color: #5b6272; }
+      button { border: 0; border-radius: 999px; padding: 13px 22px; font: inherit; font-weight: 700; background: #ff7a30; color: #fff; cursor: pointer; width: 100%; }
+      button:disabled { opacity: .6; }
+      .err { color: #c0392b; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div style="font-size: 44px">🔑</div>
+      <h1>Your house key</h1>
+      <p>Tap below to open your house on this device.</p>
+      <button id="go">Open my house</button>
+      <p id="msg"></p>
+    </main>
+    <script type="module">
+      // Read the token, then strip it from the address bar so it isn't left in
+      // history or leaked by a screenshot.
+      const token = new URLSearchParams(location.search).get('t');
+      history.replaceState(null, '', '/key');
+      const btn = document.getElementById('go');
+      const msg = document.getElementById('msg');
+      if (!token) {
+        btn.disabled = true;
+        msg.textContent = 'This link is incomplete. Ask for a new key.';
+        msg.className = 'err';
+      }
+      // A button (not an automatic redirect) so link-preview bots that open
+      // the URL can't use up the single-use key.
+      btn.onclick = async () => {
+        btn.disabled = true;
+        msg.textContent = 'Opening…';
+        try {
+          const res = await fetch('/api/auth/redeem', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ token }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Something went wrong');
+          location.replace('/?home=1');
+        } catch (e) {
+          msg.textContent = e.message;
+          msg.className = 'err';
+        }
+      };
+    </script>
+  </body>
+</html>
