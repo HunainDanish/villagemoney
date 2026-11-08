@@ -780,7 +780,8 @@ export class World {
       const sn = Math.sin(p.facing);
       const ux = dx * c - dz * sn;
       const uz = dx * sn + dz * c;
-      if (Math.abs(ux - (meta.cx || 0)) < meta.hx && Math.abs(uz - (meta.cz || 0)) < meta.hz) return true;
+      // +0.3 so your body stops at the wall instead of sinking into it.
+      if (Math.abs(ux - (meta.cx || 0)) < meta.hx + 0.3 && Math.abs(uz - (meta.cz || 0)) < meta.hz + 0.3) return true;
     }
     // Nodes of this plot and the plot behind it (shared back garden).
     const neighbours = [id, id - BLOCK_SIDE, id + BLOCK_SIDE].filter((n) => n >= 1);
@@ -791,7 +792,9 @@ export class World {
   #nodeBlocks(nodes, x, z) {
     for (const n of nodes) {
       const r = NODE_KINDS[n.kind].radius * n.s;
-      if (r > 0 && (n.x - x) ** 2 + (n.z - z) ** 2 < r * r && (n.kind !== 'tree' || this.isReady(n))) return true;
+      // Felled trees (stumps) and mined rocks (rubble) don't block.
+      const solid = n.kind === 'tree' || n.kind === 'rock' ? this.isReady(n) : true;
+      if (r > 0 && solid && (n.x - x) ** 2 + (n.z - z) ** 2 < r * r) return true;
     }
     return false;
   }

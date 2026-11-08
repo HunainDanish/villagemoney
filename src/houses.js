@@ -202,6 +202,8 @@ function shrubs(out, list) {
 
 // ---------------------------------------------------------------------------
 // Models. Footprints stay within x -5.5..5.5 and z -4..5 so yards still fit.
+// Collision (hx/hz/cx/cz) covers the solid walls + foundation only. Porches,
+// steps and columns stay walkable, so there are never invisible walls.
 
 function cottage() {
   const out = { walls: [], roof: [], details: [], glass: [], meta: {} };
@@ -220,7 +222,7 @@ function cottage() {
   lampBracket(out, 0, 4.15, 3.1);
   chimney(out, 2.3, -1.3, top + 3.2);
   shrubs(out, [[-3.2, 3.9], [3.2, 3.9]]);
-  Object.assign(out.meta, { porch: [0, 4.3, 3.45], height: top + 4.2, hx: 4.0, hz: 3.6 });
+  Object.assign(out.meta, { porch: [0, 4.3, 3.45], height: top + 4.2, hx: 3.75, hz: 3.25 });
   return out;
 }
 
@@ -244,7 +246,7 @@ function cabin() {
   out.details.push(paint(box(0.06, 0.45, 0.06, 1.3, 4.25, 4.55), COL.dark)); // lantern chain
   path(out, 0, 5.3);
   chimney(out, -2.0, -1.8, top + 3.4);
-  Object.assign(out.meta, { porch: [1.3, 3.9, 4.55], height: top + 5, hx: 3.6, hz: 4.7, cz: 0.7 });
+  Object.assign(out.meta, { porch: [1.3, 3.9, 4.55], height: top + 5, hx: 3.35, hz: 3.65 });
   return out;
 }
 
@@ -263,7 +265,7 @@ function bungalow() {
   chimney(out, -2.6, -1.4, top + 3.0);
   shrubs(out, [[3.8, 3.9, 0.6], [-4.2, 3.8, 0.6]]);
   lampBracket(out, -1.0, 3.4, 3.2);
-  Object.assign(out.meta, { porch: [-1.0, 3.55, 3.55], height: top + 3.6, hx: 4.6, hz: 3.7 });
+  Object.assign(out.meta, { porch: [-1.0, 3.55, 3.55], height: top + 3.6, hx: 4.35, hz: 3.35 });
   return out;
 }
 
@@ -288,7 +290,7 @@ function familyHome() {
   windowOn(out, { x: -4.32, y: 2.8, z: -0.5, face: 'x' });
   chimney(out, -2.8, -1.6, top + 3.4);
   Object.assign(out.meta, {
-    porch: [0, 3.95, 4.3], height: top + 4.4, hx: 4.6, hz: 4.3, cz: 0.6,
+    porch: [0, 3.95, 4.3], height: top + 4.4, hx: 4.45, hz: 3.45,
     slots: [[-5.6, 6.4], [5.4, 6.3], [-6.3, 2.4], [6.3, 2.4], [-6.6, -2.0], [6.6, -2.0]],
   });
   return out;
@@ -322,7 +324,7 @@ function twoStorey() {
   }
   chimney(out, 2.6, -1.5, top + 3.6);
   shrubs(out, [[-3.6, 4.0], [3.6, 4.0]]);
-  Object.assign(out.meta, { porch: [1.35, 3.15, 3.65], height: top + 4.6, hx: 4.2, hz: 3.6 });
+  Object.assign(out.meta, { porch: [1.35, 3.15, 3.65], height: top + 4.6, hx: 3.95, hz: 3.45 });
   return out;
 }
 
@@ -364,7 +366,7 @@ function manor() {
   chimney(out, 1.6, -2.0, top + 3.6);
   shrubs(out, [[-5.0, 4.2, 0.65], [2.4, 4.3, 0.55], [6.6, 3.2, 0.55]]);
   Object.assign(out.meta, {
-    porch: [0.45, 3.35, 3.9], height: top + 4.2, hx: 5.95, hz: 4.5, cx: 0.75, cz: 0.8,
+    porch: [0.45, 3.35, 3.9], height: top + 4.2, hx: 5.75, hz: 3.65, cx: 0.9,
     // The garage wing and driveway take the right side, so decor shifts.
     slots: [[-4.8, 5.6], [2.0, 6.1], [-6.6, 2.4], [6.3, 6.0], [-6.8, -2.0], [6.9, -4.6]],
   });
