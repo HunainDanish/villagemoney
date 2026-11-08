@@ -32,7 +32,7 @@
       </section>
       <section>
         <h2>Give someone a house key</h2>
-        <p class="muted">Until Instagram is connected: when someone DMs you “key”, enter their username here and paste the link back into the DM. Check the DM really comes from that account.</p>
+        <p class="muted">Works for new and existing residents: a new key opens the same house with all its progress. Older unused keys keep working until used or 30 days pass. Until Instagram is connected: when someone DMs you “key”, enter their username here and paste the link back into the DM. Check the DM really comes from that account.</p>
         <form id="create"><input id="username" placeholder="instagram_username" autocomplete="off" /><button>Create key</button></form>
         <div id="result"></div>
       </section>
@@ -64,7 +64,7 @@
         try {
           const { residents } = await call('GET', '/api/admin/residents');
           $('rows').innerHTML = residents
-            .map((r) => `<tr><td>${r.id}</td><td>@${esc(r.username)}${r.hidden ? ' (hidden)' : ''}</td><td>${esc(r.source)}</td><td><button class="ghost" data-u="${esc(r.username)}">Remove</button></td></tr>`)
+            .map((r) => `<tr><td>${r.id}</td><td>@${esc(r.username)}${r.hidden ? ' (hidden)' : ''}</td><td>${esc(r.source)}</td><td><button data-key="${esc(r.username)}">🔑 New key</button> <button class="ghost" data-u="${esc(r.username)}">Remove</button></td></tr>`)
             .join('');
         } catch (e) {
           $('rows').innerHTML = `<tr><td colspan="4" class="err">${esc(e.message)}</td></tr>`;
@@ -79,24 +79,31 @@
       };
       $('reload').onclick = list;
 
-      $('create').onsubmit = async (e) => {
-        e.preventDefault();
+      // Make a key for a username (new or existing) and show it once.
+      async function makeKey(username) {
         $('result').innerHTML = '';
         try {
-          const r = await call('POST', '/api/admin/create', { username: $('username').value });
+          const r = await call('POST', '/api/admin/create', { username });
           $('result').innerHTML = `<div class="link"><b>@${esc(r.username)}</b> · House #${r.id}<br><br><span id="lnk">${esc(r.link)}</span><br><br><button id="copy">Copy link</button></div>`;
           $('copy').onclick = async () => {
             await navigator.clipboard.writeText(r.link);
             $('copy').textContent = 'Copied';
           };
           $('username').value = '';
+          $('result').scrollIntoView({ behavior: 'smooth', block: 'center' });
           list();
         } catch (err) {
           $('result').innerHTML = `<p class="err">${esc(err.message)}</p>`;
         }
+      }
+
+      $('create').onsubmit = (e) => {
+        e.preventDefault();
+        makeKey($('username').value);
       };
 
       $('rows').onclick = async (e) => {
+        if (e.target.dataset?.key) return makeKey(e.target.dataset.key);
         const u = e.target.dataset?.u;
         if (!u || !confirm(`Remove @${u}'s house? This deletes their account.`)) return;
         try {
