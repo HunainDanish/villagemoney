@@ -13,10 +13,12 @@ Object.assign(process.env, {
   ADMIN_SECRET: 'a-long-admin-secret-123',
 });
 const ig = await import('../api/instagram.js');
-const create = await import('../api/admin/create.js');
+const admin = await import('../api/admin/[action].js');
+const create = { POST: (r) => admin.POST(new Request(r.url.replace('http://x', 'http://x/api/admin/create'), r)) };
 const block = await import('../api/block.js');
 const find = await import('../api/find.js');
-const redeem = await import('../api/auth/redeem.js');
+const auth = await import('../api/auth/[action].js');
+const redeem = { POST: (r) => auth.POST(new Request(r.url.replace('http://x', 'http://x/api/auth/redeem'), r)) };
 const actions = await import('../api/actions.js');
 
 test('webhook verification echoes the challenge only with the right token', async () => {
@@ -85,4 +87,13 @@ test('admin errors say what is wrong, and ignore stray spaces', async () => {
   } finally {
     process.env.ADMIN_SECRET = saved;
   }
+});
+
+test('auth and admin routes dispatch by URL', async () => {
+  const unknown = await auth.POST(new Request('http://x/api/auth/nope', { method: 'POST', body: '{}' }));
+  assert.equal(unknown.status, 404);
+  const wrongMethod = await auth.GET(new Request('http://x/api/auth/login'));
+  assert.equal(wrongMethod.status, 405);
+  const residents = await admin.GET(new Request('http://x/api/admin/residents', { headers: { 'x-admin-secret': 'wrong' } }));
+  assert.equal(residents.status, 401);
 });

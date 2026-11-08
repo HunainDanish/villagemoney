@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { hashPassword, verifyPassword, passwordProblem } from '../lib/password.js';
 
 Object.assign(process.env, { SUPABASE_URL: 'https://example.invalid', SUPABASE_SERVICE_ROLE_KEY: 'x' });
-const login = await import('../api/auth/login.js');
-const setpw = await import('../api/auth/password.js');
+const auth = await import('../api/auth/[action].js');
+const at = (name) => ({ POST: (r) => auth.POST(new Request(r.url.replace('http://x', 'http://x/api/auth/' + name), r)) });
+const login = at('login');
+const setpw = at('password');
 
 test('passwords are hashed with a salt and verify correctly', async () => {
   const a = await hashPassword('correct horse battery');
