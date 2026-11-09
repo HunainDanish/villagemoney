@@ -10,6 +10,12 @@ A small 3D town in the browser where every follower gets a house. "Porchlight" i
 
 The live site is in **houses-only mode**. Every follower gets a house, and you can sign in, walk around, search, visit and knock on doors, and see other players live, with day and night. All the game code (resources, coins, quests, upgrades, farming, raids, friends, cars) is still in this project, switched off with one setting:
 
+**Getting around:**
+- **Phones:** an on-screen joystick (bottom left) and a 🏃 Run button.
+- **🎥 View:** switches between street level (low, behind you) and the view from above.
+- **😊 React:** wave, ❤️, 😂, 🎉, 😮 and short phrases ("hi!", "nice house!"…) shown as speech bubbles to players nearby. It is a fixed set with no free text, so there is nothing to moderate.
+- **📍 Places and 🧭 Walk here** (on house cards): GPS directions along streets and lanes, with arrows on the ground, a turn-by-turn banner, distance and time, and ▶ to walk there automatically.
+
 - **Switch the game back on:** set `GAME = true` in [shared/features.js](shared/features.js).
 - **The full game exactly as it was** is also saved on the `full-game` branch.
 

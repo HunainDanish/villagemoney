@@ -33,6 +33,7 @@ export class Net {
     this.client = null;
     this.status = 'off'; // off | connecting | live | error
     this.onCount = () => {};
+    this.onReact = () => {}; // (character group, reaction key)
   }
 
   async connect(url, anonKey) {
@@ -73,6 +74,7 @@ export class Net {
       config: { broadcast: { self: false, ack: false }, presence: { key: this.id } },
     });
     ch.on('broadcast', { event: 'p' }, ({ payload }) => this.#receive(payload));
+    ch.on('broadcast', { event: 'e' }, ({ payload }) => this.#reacted(payload));
     ch.on('presence', { event: 'sync' }, () => this.#syncPresence());
     ch.subscribe((status, err) => {
       if (status === 'SUBSCRIBED') {
@@ -141,6 +143,21 @@ export class Net {
     peer.to.set(p.x, 0, p.z);
     peer.h = p.h;
     peer.last = performance.now();
+  }
+
+  // A nearby player reacted: wave if it's a wave, and show their bubble.
+  #reacted(p) {
+    const peer = this.peers.get(p?.i);
+    if (!peer || typeof p.k !== 'string') return;
+    if (p.k === 'wave') peer.char.play('wave');
+    this.onReact(peer.car && peer.v ? peer.car : peer.char.group, p.k.slice(0, 12));
+  }
+
+  // Send one of your reactions to everyone nearby (only if someone is there).
+  react(key) {
+    if (this.channel?.state === 'joined' && this.others > 0) {
+      this.channel.send({ type: 'broadcast', event: 'e', payload: { i: this.id, k: key } });
+    }
   }
 
   #remove(id) {
@@ -238,6 +255,10 @@ export class Net {
         b.z = nz;
       }
       this.#receive({ i: b.id, n: b.name, x: b.x, z: b.z, h: b.a });
+      if (Math.random() < dt * 0.04) {
+        const keys = ['wave', 'hi', 'heart', 'laugh', 'party', 'nice'];
+        this.#reacted({ i: b.id, k: keys[(Math.random() * keys.length) | 0] });
+      }
     }
   }
 
