@@ -757,7 +757,10 @@ async function boot() {
 
   const res = await loadMe();
   me = res.resident;
-  if (res.error || res.warning) setTimeout(() => ui.celebrate(res.error || res.warning), 600);
+  // Houses-only mode doesn't use friends / gifts / raids, so don't nag about
+  // the database update they need (004_social.sql). Other warnings still show.
+  const warning = !GAME && /004_social/.test(res.warning || '') ? null : res.warning;
+  if (res.error || warning) setTimeout(() => ui.celebrate(res.error || warning), 600);
   if (me && res.state) store.initMember(me, res.state, res.events);
   else {
     if (isDemo()) me = { id: 7, username: demoNameFor(7), hidden: false, demo: true };
