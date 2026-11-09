@@ -6,6 +6,10 @@
 // players, which removes most of the reason to cheat.
 
 import { NODE_KINDS, MAX_COOLDOWN_MS, nodeById, YARD_SLOTS } from './nodes.js';
+import {
+  ENERGY_MAX, ENERGY_REGEN_MS, ENERGY_COST, CROPS, GARDEN_PLOTS, GROCER, COOKBOOK, SNACKS,
+  JOBS, LOCKS, GUARD_DOG, ALARM, RAID, CARS,
+} from './life.js';
 
 export const ITEMS = {
   log: { name: 'Log', icon: '🪵', sell: 2 },
@@ -24,7 +28,26 @@ export const ITEMS = {
   lantern: { name: 'Lantern', icon: '🏮', decor: true },
   birdhouse: { name: 'Birdhouse', icon: '🐦', decor: true },
   gnome: { name: 'Garden gnome', icon: '🧙', decor: true },
+  // Farming and food
+  wheat: { name: 'Wheat', icon: '🌾', sell: 1 },
+  carrot: { name: 'Carrot', icon: '🥕', sell: 2 },
+  tomato: { name: 'Tomato', icon: '🍅', sell: 3 },
+  pumpkin: { name: 'Pumpkin', icon: '🎃', sell: 18 },
+  wheat_seed: { name: 'Wheat seeds', icon: '🌱', seed: 'wheat' },
+  carrot_seed: { name: 'Carrot seeds', icon: '🌱', seed: 'carrot' },
+  tomato_seed: { name: 'Tomato seeds', icon: '🌱', seed: 'tomato' },
+  pumpkin_seed: { name: 'Pumpkin seeds', icon: '🌱', seed: 'pumpkin' },
+  milk: { name: 'Milk', icon: '🥛' },
+  egg: { name: 'Egg', icon: '🥚' },
+  cheese: { name: 'Cheese', icon: '🧀' },
+  bread: { name: 'Bread', icon: '🍞', meal: true },
+  salad: { name: 'Salad', icon: '🥗', meal: true },
+  omelette: { name: 'Omelette', icon: '🍳', meal: true },
+  berry_pie: { name: 'Berry pie', icon: '🥧', meal: true },
+  fish_stew: { name: 'Fish stew', icon: '🍲', meal: true },
+  pumpkin_soup: { name: 'Pumpkin soup', icon: '🥣', meal: true },
 };
+const FISH_ITEMS = ['minnow', 'perch', 'trout', 'koi', 'goldfish'];
 
 export const RECIPES = {
   fence: { log: 4 },
@@ -50,13 +73,14 @@ export const HOUSE_TIERS = [
   { tier: 2, name: 'Family home', blurb: 'Wider, with a covered front porch and a dormer window.', cost: { log: 30, stone: 15, coins: 150 } },
   { tier: 3, name: 'Two-storey house', blurb: 'A second floor, more windows and a door canopy.', cost: { log: 90, stone: 60, coins: 600, lantern: 2 } },
   { tier: 4, name: 'Manor', blurb: 'Columns, a balcony, a garage wing and two chimneys.', cost: { log: 200, stone: 150, coins: 1500, bench: 1 } },
+  { tier: 5, name: 'Mansion', blurb: 'Three floors, two towers and a grand entrance: the biggest house in town.', cost: { log: 400, stone: 300, coins: 4000, lantern: 4, bench: 2 } },
 ];
 export const WALL_PAINTS = [0xf6e7d0, 0xf2c6b4, 0xcfe5f2, 0xfff1a8, 0xd9f0c9, 0xe8d5f5, 0xfad2d2, 0xffffff, 0x9fb7d9, 0xc9a27e];
 export const ROOF_PAINTS = [0xc0504d, 0x4f6d9a, 0x5b8c5a, 0x8a5a44, 0x3e3e4a, 0xd98c3f, 0x7b5ea7, 0x2f7f86];
 
 const SELL_COIN_CAP = 300; // per day
 const TOKENS_MAX = 30; // action budget (refills 1 per second)
-export const SKILLS = { wood: 'Woodcutting', mine: 'Mining', forage: 'Foraging', fish: 'Fishing', craft: 'Crafting' };
+export const SKILLS = { wood: 'Woodcutting', mine: 'Mining', forage: 'Foraging', fish: 'Fishing', craft: 'Crafting', farm: 'Farming' };
 
 export const levelFor = (xp = 0) => Math.floor(Math.sqrt(xp / 20)) + 1;
 export const xpForLevel = (lvl) => 20 * (lvl - 1) ** 2;
@@ -66,6 +90,9 @@ export function initialState() {
     v: 1, items: {}, coins: 0, xp: {}, nodes: {}, day: null, counts: {}, visits: [],
     quests: 0, streak: 0, lastDay: null, decor: Array(YARD_SLOTS.length).fill(null), paint: {}, tier: 1,
     tokens: TOKENS_MAX, tokensAt: 0, fishAt: 0,
+    energy: ENERGY_MAX, energyAt: 0, garden: Array(GARDEN_PLOTS).fill(null), job: null, jobDay: null,
+    defence: { lock: 0, dog: false, alarm: false }, raid: { on: false, since: 0, at: 0, shield: 0 },
+    cars: [], car: null,
   };
 }
 
@@ -133,7 +160,67 @@ function rollover(s, now, events) {
 function refill(s, now) {
   s.tokens = Math.min(TOKENS_MAX, (s.tokens ?? TOKENS_MAX) + Math.max(0, now - (s.tokensAt || now)) / 1000);
   s.tokensAt = now;
+  // Energy: +1 every ENERGY_REGEN_MS. Older saves start full.
+  if (s.energy === undefined) s.energy = ENERGY_MAX;
+  if (s.energy < ENERGY_MAX) {
+    const gained = Math.floor(Math.max(0, now - (s.energyAt || now)) / ENERGY_REGEN_MS);
+    if (gained > 0) {
+      s.energy = Math.min(ENERGY_MAX, s.energy + gained);
+      s.energyAt = (s.energyAt || now) + gained * ENERGY_REGEN_MS;
+    }
+  }
+  if (s.energy >= ENERGY_MAX || !s.energyAt) s.energyAt = now;
 }
+
+// Fill in fields added after a save was created.
+function upgradeSave(s) {
+  s.garden ||= Array(GARDEN_PLOTS).fill(null);
+  s.defence ||= { lock: 0, dog: false, alarm: false };
+  s.raid ||= { on: false, since: 0, at: 0, shield: 0 };
+  s.cars ||= [];
+  if (s.car === undefined) s.car = null;
+  if (s.job === undefined) s.job = null;
+}
+
+function spendEnergy(s, n) {
+  if ((s.energy ?? ENERGY_MAX) < n) return false;
+  if (s.energy >= ENERGY_MAX) s.energyAt = s.energyAt || 0;
+  s.energy -= n;
+  return true;
+}
+
+export function energyNow(s, now) {
+  if (s.energy === undefined) return ENERGY_MAX;
+  const gained = Math.floor(Math.max(0, now - (s.energyAt || now)) / ENERGY_REGEN_MS);
+  return Math.min(ENERGY_MAX, s.energy + gained);
+}
+
+export const cropReadyAt = (s, plot) => {
+  const g = s.garden?.[plot];
+  if (!g) return null;
+  return g.at + CROPS[g.c].growMs / (s.job === 'farmer' ? 2 : 1);
+};
+
+// Builder job: 20% fewer logs and stone on upgrades and defences.
+function discounted(s, cost) {
+  const out = { ...cost };
+  if (s.job === 'builder') for (const k of ['log', 'stone']) if (out[k]) out[k] = Math.ceil(out[k] * 0.8);
+  return out;
+}
+
+function pay(s, cost) {
+  const { coins = 0, ...mats } = cost;
+  for (const [item, n] of Object.entries(mats)) {
+    if ((s.items[item] || 0) < n) return `you need ${n} × ${ITEMS[item].name.toLowerCase()}`;
+  }
+  if (s.coins < coins) return `you need ${coins} coins`;
+  for (const [item, n] of Object.entries(mats)) s.items[item] -= n;
+  s.coins -= coins;
+  return null;
+}
+
+// Actions only the server may run (they move things between two players).
+export const TRUSTED_ACTIONS = new Set(['receive', 'giftOut', 'raidResult', 'raided']);
 
 function pruneNodes(s, now) {
   for (const [k, t] of Object.entries(s.nodes)) if (now - t >= MAX_COOLDOWN_MS) delete s.nodes[k];
@@ -157,10 +244,12 @@ export function applyAction(s, action, ctx) {
   const events = [];
   const { now } = ctx;
   if (!action || typeof action !== 'object') return { ok: false, reason: 'bad action', events };
+  upgradeSave(s);
   rollover(s, now, events);
   refill(s, now);
   pruneNodes(s, now);
   const fail = (reason) => ({ ok: false, reason, events });
+  if (TRUSTED_ACTIONS.has(action.a) && !ctx.trusted) return fail('not allowed');
 
   switch (action.a) {
     case 'checkin':
@@ -173,13 +262,16 @@ export function applyAction(s, action, ctx) {
       if (nodeReadyAt(s, node) > now) return fail('not grown back yet');
       if ((s.counts[k.item] || 0) >= k.cap) return fail('daily limit reached');
       if (s.tokens < k.cost) return fail('too fast');
+      if (!spendEnergy(s, ENERGY_COST[node.kind])) return fail('too tired: eat something to get energy back');
       s.tokens -= k.cost;
       s.nodes[node.id] = now;
-      addItem(s, k.item, k.qty);
-      count(s, k.item, k.qty);
+      const bonus = (node.kind === 'tree' && s.job === 'woodcutter') || (node.kind === 'rock' && s.job === 'miner') ? 1 : 0;
+      const qty = k.qty + bonus;
+      addItem(s, k.item, qty);
+      count(s, k.item, qty);
       const before = levelFor(s.xp[k.skill]);
       addXp(s, k.skill, k.xp);
-      events.push({ type: 'gain', item: k.item, qty: k.qty, skill: k.skill });
+      events.push({ type: 'gain', item: k.item, qty, skill: k.skill });
       if (levelFor(s.xp[k.skill]) > before) events.push({ type: 'level', skill: k.skill, level: levelFor(s.xp[k.skill]) });
       return { ok: true, events };
     }
@@ -187,8 +279,10 @@ export function applyAction(s, action, ctx) {
     case 'fish': {
       if (now - (s.fishAt || 0) < FISH_COOLDOWN_MS) return fail('too fast');
       if ((s.counts.fish || 0) >= FISH_CAP) return fail('daily limit reached');
+      if (s.job !== 'fisher' && !spendEnergy(s, ENERGY_COST.fish)) return fail('too tired: eat something to get energy back');
       s.fishAt = now;
-      const f = rollFish(ctx.rng);
+      let f = rollFish(ctx.rng);
+      if (f === 'boot' && s.job === 'fisher') f = 'minnow';
       addItem(s, f, 1);
       if (f !== 'boot') count(s, 'fish');
       const before = levelFor(s.xp.fish);
@@ -230,14 +324,16 @@ export function applyAction(s, action, ctx) {
       const qty = action.qty;
       if (!def?.sell || !Number.isInteger(qty) || qty < 1 || qty > 999) return fail('cannot sell that');
       if ((s.items[action.item] || 0) < qty) return fail('not enough');
-      const left = SELL_COIN_CAP - (s.counts.sold || 0);
+      const merchant = s.job === 'merchant';
+      const price = merchant ? Math.ceil(def.sell * 1.25) : def.sell;
+      const left = SELL_COIN_CAP + (merchant ? 100 : 0) - (s.counts.sold || 0);
       if (left <= 0) return fail('the stall is out of coins for today');
-      const n = Math.min(qty, Math.floor(left / def.sell)) || 0;
+      const n = Math.min(qty, Math.floor(left / price)) || 0;
       if (n < 1) return fail('the stall is out of coins for today');
       s.items[action.item] -= n;
-      s.coins += n * def.sell;
-      count(s, 'sold', n * def.sell);
-      events.push({ type: 'coins', coins: n * def.sell });
+      s.coins += n * price;
+      count(s, 'sold', n * price);
+      events.push({ type: 'coins', coins: n * price });
       return { ok: true, events };
     }
 
@@ -254,13 +350,188 @@ export function applyAction(s, action, ctx) {
     case 'upgrade': {
       const next = HOUSE_TIERS[s.tier || 1]; // tiers are 1-based
       if (!next) return fail('your house is fully upgraded');
-      const { coins = 0, ...mats } = next.cost;
-      for (const [item, n] of Object.entries(mats)) if ((s.items[item] || 0) < n) return fail(`you need ${n} × ${ITEMS[item].name.toLowerCase()}`);
-      if (s.coins < coins) return fail(`you need ${coins} coins`);
-      for (const [item, n] of Object.entries(mats)) s.items[item] -= n;
-      s.coins -= coins;
+      const problem = pay(s, discounted(s, next.cost));
+      if (problem) return fail(problem);
       s.tier = next.tier;
       events.push({ type: 'decor' }, { type: 'upgrade', tier: next.tier, name: next.name });
+      return { ok: true, events };
+    }
+
+    // ---------- groceries, farming, cooking, energy ----------
+    case 'buy': {
+      const price = GROCER[action.item];
+      const qty = action.qty ?? 1;
+      if (!price || !Number.isInteger(qty) || qty < 1 || qty > 50) return fail('the grocer does not sell that');
+      if (s.coins < price * qty) return fail(`that costs ${price * qty} coins`);
+      s.coins -= price * qty;
+      addItem(s, action.item, qty);
+      events.push({ type: 'gain', item: action.item, qty });
+      return { ok: true, events };
+    }
+
+    case 'plant': {
+      const plot = action.plot;
+      const crop = CROPS[action.crop];
+      if (!Number.isInteger(plot) || plot < 0 || plot >= GARDEN_PLOTS || !crop) return fail('bad plot');
+      if (s.garden[plot]) return fail('something is already growing there');
+      if ((s.items[`${action.crop}_seed`] || 0) < 1) return fail(`buy ${crop.name.toLowerCase()} seeds at the grocer first`);
+      if (!spendEnergy(s, ENERGY_COST.plant)) return fail('too tired: eat something to get energy back');
+      s.items[`${action.crop}_seed`] -= 1;
+      s.garden[plot] = { c: action.crop, at: now };
+      events.push({ type: 'decor' });
+      return { ok: true, events };
+    }
+
+    case 'reap': {
+      const plot = action.plot;
+      const g = s.garden?.[plot];
+      if (!g) return fail('nothing is growing there');
+      if (cropReadyAt(s, plot) > now) return fail('not ready yet');
+      const qty = CROPS[g.c].yield + (s.job === 'farmer' ? 1 : 0);
+      s.garden[plot] = null;
+      addItem(s, g.c, qty);
+      count(s, g.c, qty);
+      const before = levelFor(s.xp.farm);
+      addXp(s, 'farm', 6);
+      events.push({ type: 'gain', item: g.c, qty, skill: 'farm' }, { type: 'decor' });
+      if (levelFor(s.xp.farm) > before) events.push({ type: 'level', skill: 'farm', level: levelFor(s.xp.farm) });
+      return { ok: true, events };
+    }
+
+    case 'cook': {
+      const r = COOKBOOK[action.r];
+      if (!r) return fail('unknown recipe');
+      const fish = FISH_ITEMS.find((f) => (s.items[f] || 0) > 0);
+      for (const [item, n] of Object.entries(r.needs)) {
+        if (item === 'fish' ? !fish : (s.items[item] || 0) < n) return fail('missing ingredients');
+      }
+      for (const [item, n] of Object.entries(r.needs)) s.items[item === 'fish' ? fish : item] -= n;
+      addItem(s, action.r, 1);
+      count(s, 'cook');
+      events.push({ type: 'gain', item: action.r, qty: 1, skill: 'cook' });
+      return { ok: true, events };
+    }
+
+    case 'eat': {
+      const energy = COOKBOOK[action.item]?.energy ?? SNACKS[action.item];
+      if (!energy) return fail('you cannot eat that');
+      if ((s.items[action.item] || 0) < 1) return fail('you do not have that');
+      if ((s.energy ?? ENERGY_MAX) >= ENERGY_MAX) return fail('you are full of energy already');
+      s.items[action.item] -= 1;
+      s.energy = Math.min(ENERGY_MAX, (s.energy ?? ENERGY_MAX) + energy);
+      events.push({ type: 'energy', energy });
+      return { ok: true, events };
+    }
+
+    // ---------- jobs ----------
+    case 'job': {
+      if (action.job !== null && !JOBS[action.job]) return fail('unknown job');
+      if (s.job === action.job) return { ok: true, events };
+      if (s.job && s.jobDay === s.day) return fail('you can change jobs once a day');
+      s.job = action.job;
+      s.jobDay = s.day;
+      events.push({ type: 'decor' });
+      return { ok: true, events };
+    }
+
+    // ---------- defences and raid mode ----------
+    case 'defend': {
+      const d = s.defence;
+      let cost;
+      if (action.what === 'lock') {
+        const next = LOCKS[(d.lock || 0) + 1];
+        if (!next) return fail('your lock is already the best');
+        cost = next.cost;
+      } else if (action.what === 'dog') {
+        if (d.dog) return fail('you already have a guard dog');
+        cost = GUARD_DOG.cost;
+      } else if (action.what === 'alarm') {
+        if (d.alarm) return fail('you already have an alarm bell');
+        cost = ALARM.cost;
+      } else return fail('unknown defence');
+      const problem = pay(s, discounted(s, cost));
+      if (problem) return fail(problem);
+      if (action.what === 'lock') d.lock = (d.lock || 0) + 1;
+      else d[action.what] = true;
+      events.push({ type: 'decor' });
+      return { ok: true, events };
+    }
+
+    case 'raidMode': {
+      const on = Boolean(action.on);
+      if (on === s.raid.on) return { ok: true, events };
+      if (!on && now - s.raid.since < RAID.lockInMs) {
+        const h = Math.ceil((RAID.lockInMs - (now - s.raid.since)) / 3600e3);
+        return fail(`raid mode stays on for 24 hours once switched on (${h} h left)`);
+      }
+      s.raid.on = on;
+      s.raid.since = now;
+      events.push({ type: 'decor' });
+      return { ok: true, events };
+    }
+
+    // ---------- cars ----------
+    case 'buyCar': {
+      const car = CARS[action.model];
+      if (!car) return fail('unknown car');
+      if (s.cars.includes(action.model)) return fail('you already own this car');
+      if (s.coins < car.price) return fail(`this car costs ${car.price} coins`);
+      s.coins -= car.price;
+      s.cars.push(action.model);
+      s.car = action.model;
+      events.push({ type: 'decor' }, { type: 'car', model: action.model });
+      return { ok: true, events };
+    }
+
+    case 'pickCar': {
+      if (action.model !== null && !s.cars.includes(action.model)) return fail('you do not own that car');
+      s.car = action.model;
+      events.push({ type: 'decor' });
+      return { ok: true, events };
+    }
+
+    // ---------- server-only (two players involved) ----------
+    case 'giftOut': {
+      const qty = action.qty;
+      if (!ITEMS[action.item] || !Number.isInteger(qty) || qty < 1 || qty > 99) return fail('cannot gift that');
+      if ((s.items[action.item] || 0) < qty) return fail('you do not have that many');
+      if ((s.counts.gifts || 0) >= 10) return fail('you can send 10 gifts a day');
+      s.items[action.item] -= qty;
+      count(s, 'gifts');
+      return { ok: true, events };
+    }
+
+    case 'receive': {
+      for (const [item, n] of Object.entries(action.items || {})) if (ITEMS[item] && n > 0) addItem(s, item, n);
+      if (action.coins > 0) s.coins += action.coins;
+      events.push({ type: 'received', from: action.from, items: action.items, coins: action.coins, note: action.note });
+      return { ok: true, events };
+    }
+
+    case 'raidResult': {
+      // Raider side. action = { ok, loot: {item: n}, coins, fine, target }
+      s.raid.at = now;
+      s.raid.shield = 0; // raiding drops your own shield
+      s.energy = Math.max(0, (s.energy ?? ENERGY_MAX) - ENERGY_COST.raid);
+      if (action.ok) {
+        for (const [item, n] of Object.entries(action.loot || {})) addItem(s, item, n);
+        s.coins += action.coins || 0;
+      } else {
+        s.coins = Math.max(0, s.coins - (action.fine || 0));
+      }
+      count(s, 'raids');
+      return { ok: true, events };
+    }
+
+    case 'raided': {
+      // Target side. action = { ok, loot, coins, fine }
+      s.raid.shield = now + RAID.shieldMs;
+      if (action.ok) {
+        for (const [item, n] of Object.entries(action.loot || {})) s.items[item] = Math.max(0, (s.items[item] || 0) - n);
+        s.coins = Math.max(0, s.coins - (action.coins || 0));
+      } else {
+        s.coins += action.fine || 0;
+      }
       return { ok: true, events };
     }
 
@@ -300,4 +571,39 @@ export function applyBatch(state, actions, ctx) {
 }
 
 // Public bits of a resident's yard, mirrored into residents.look for /api/block.
-export const publicLook = (s) => ({ decor: s.decor, paint: s.paint, tier: s.tier || 1 });
+// Garden, defences, raid status, job and car are public so visitors see them.
+export const publicLook = (s) => ({
+  decor: s.decor,
+  paint: s.paint,
+  tier: s.tier || 1,
+  garden: s.garden || [],
+  def: s.defence ? { lock: s.defence.lock || 0, dog: Boolean(s.defence.dog), alarm: Boolean(s.defence.alarm) } : undefined,
+  raid: s.raid?.on ? 1 : 0,
+  shield: s.raid?.shield || 0,
+  job: s.job || null,
+  car: s.car || null,
+});
+
+// Is a raid allowed right now? Pure check used by the server (and the UI).
+export function raidProblem(raider, target, now) {
+  if (!raider.raid?.on) return 'switch on raid mode first (My house)';
+  if (!target.raid?.on) return 'this house is not in raid mode';
+  if ((target.raid.shield || 0) > now) return 'this house is shielded after a recent raid';
+  if (now - (raider.raid.at || 0) < RAID.cooldownMs) return 'you need to rest before another raid';
+  if ((raider.energy ?? ENERGY_MAX) < ENERGY_COST.raid) return 'too tired: eat something to get energy back';
+  return null;
+}
+
+// Work out a raid: who wins and what moves. Pure; the server applies it to
+// both players with the raidResult / raided actions.
+export function resolveRaid(target, defence, skill, rng, chanceFn) {
+  const win = rng() < chanceFn(defence, skill);
+  if (!win) return { ok: false, fine: RAID.fine, loot: {}, coins: 0 };
+  const loot = {};
+  for (const item of ['log', 'stone', 'flower', 'berry', 'wheat', 'carrot', 'tomato', 'pumpkin']) {
+    const n = Math.min(RAID.lootCap, Math.floor((target.items?.[item] || 0) * RAID.lootShare));
+    if (n > 0) loot[item] = n;
+  }
+  const coins = Math.min(RAID.coinCap, Math.floor((target.coins || 0) * RAID.coinShare));
+  return { ok: true, loot, coins, fine: 0 };
+}

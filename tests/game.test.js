@@ -116,12 +116,12 @@ test('house upgrades cost materials and coins, one tier at a time', () => {
   let r;
   ({ results: r } = applyBatch(s, [{ a: 'upgrade' }], ctx(T0)));
   assert.equal(r[0].ok, false);
-  s.items = { log: 1000, stone: 1000, lantern: 2, bench: 1 };
-  s.coins = 5000;
-  ({ state: s, results: r } = applyBatch(s, [{ a: 'upgrade' }, { a: 'upgrade' }, { a: 'upgrade' }, { a: 'upgrade' }], ctx(T0)));
-  assert.deepEqual(r.map((x) => x.ok), [true, true, true, false]);
-  assert.equal(s.tier, 4);
+  s.items = { log: 2000, stone: 2000, lantern: 6, bench: 3 };
+  s.coins = 20000;
+  ({ state: s, results: r } = applyBatch(s, [{ a: 'upgrade' }, { a: 'upgrade' }, { a: 'upgrade' }, { a: 'upgrade' }, { a: 'upgrade' }], ctx(T0)));
+  assert.deepEqual(r.map((x) => x.ok), [true, true, true, true, false]);
+  assert.equal(s.tier, 5);
   const spent = HOUSE_TIERS.slice(1).reduce((a, t) => a + t.cost.log, 0);
-  assert.equal(s.items.log, 1000 - spent);
+  assert.equal(s.items.log, 2000 - spent);
   assert.equal(s.items.bench, 0);
 });
