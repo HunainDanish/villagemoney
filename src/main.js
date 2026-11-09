@@ -16,6 +16,9 @@ import { YARD_SLOTS, PLAZA } from '../shared/nodes.js';
 import { JOBS, COOKBOOK, SNACKS, ENERGY_MAX, defenceScore, STAY, HOUSE_POINT_COST } from '../shared/life.js';
 import { energyNow } from '../shared/game.js';
 import { createLifeUI } from './life-ui.js';
+import { Joystick } from './joystick.js';
+import { Navigator, doorPoint } from './nav.js';
+import { REACTIONS, Bubbles } from './reactions.js';
 import { GAME } from '../shared/features.js';
 import { PALETTES, PREMIUM, PREMIUM_TIER, PART_UNLOCK, PART_NAMES, STARTER_STYLES, lookFor, paletteFor } from '../shared/style.js';
 
@@ -171,10 +174,15 @@ function openPlainHouse(h, mine, onKnock) {
       ${mine ? upgradeByPointsHTML() : ''}
       <div class="stack">
         ${mine ? '' : '<button class="btn primary" id="h-knock">👋 Knock on the door</button>'}
+        <button class="btn" id="h-walk">🧭 ${player.vehicle ? 'Drive' : 'Walk'} here</button>
         ${h.u ? `<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/${encodeURIComponent(h.u)}/">Open on Instagram</a>` : ''}
       </div>`;
     el.querySelector('#h-knock')?.addEventListener('click', () => (closeSheet(), onKnock(h)));
     el.querySelector('#customize-btn')?.addEventListener('click', openCustomize);
+    el.querySelector('#h-walk')?.addEventListener('click', () => {
+      closeSheet();
+      directionsToHouse(h.id, mine ? 'your house' : h.u ? `@${h.u}'s house` : 'this house');
+    });
     el.querySelector('#pt-up')?.addEventListener('click', async () => {
       const r = await act({ a: 'pointUpgrade' });
       if (!r.ok) return;
@@ -607,7 +615,7 @@ $('quests-btn').onclick = openQuests;
 $('settings-btn').onclick = openMenu;
 $('plaza-btn').onclick = () => {
   closeSheet();
-  player.teleport(0, 22, 0, 0);
+  player.teleport(0, -22, 0, 0); // facing the fountain, camera clear of buildings
   world.showMarker(null);
   ui.toast(GAME ? 'Welcome to the plaza: workbench, market, pond and quest board' : 'Welcome to the plaza ⛲');
 };
@@ -649,6 +657,99 @@ function renderStay() {
   const mins = Math.min(STAY.minutesPerPoint, s.counts?.minutes || 0);
   chip.textContent = `${mins >= STAY.minutesPerPoint ? '✅' : '⏳'} ${mins}/${STAY.minutesPerPoint} min · 🏠 ${s.points || 0}`;
 }
+
+// ---------- joystick, side buttons, GPS, reactions ----------
+const joystick = new Joystick($('controls'));
+joystick.onStart = () => player.cancel();
+player.joy = joystick;
+
+const nav = new Navigator({ world, player, banner: $('nav') });
+nav.onArrive = (dest) => {
+  sfx.level();
+  ui.celebrate(`📍 You reached ${dest.name}!`);
+};
+function directionsTo(dest) {
+  nav.go(dest);
+  ui.toast(`🧭 Directions to ${dest.name}. Tap ▶ to walk there automatically.`);
+}
+function directionsToHouse(id, name) {
+  directionsTo({ ...doorPoint(id), name, house: id });
+}
+
+const bubbles = new Bubbles($('labels'), world.camera);
+net.onReact = (object, key) => bubbles.show(object, key, player.vehicle ? 3 : 4.6);
+function react(key) {
+  $('react-menu').hidden = true;
+  if (key === 'wave') player.char.play('wave');
+  bubbles.show(player.body, key, player.vehicle ? 3 : 4.6);
+  sfx.click();
+  net.react(key);
+}
+$('react-menu').innerHTML = REACTIONS.map((r) => `<button data-react="${r.k}" class="${r.text ? 'text' : ''}">${r.text || r.icon}</button>`).join('');
+$('react-menu').querySelectorAll('[data-react]').forEach((b) => (b.onclick = () => react(b.dataset.react)));
+$('react-btn').onclick = () => ($('react-menu').hidden = !$('react-menu').hidden);
+$('run-btn').onclick = () => {
+  player.runToggle = !player.runToggle;
+  $('run-btn').classList.toggle('on', player.runToggle);
+};
+function renderCam() {
+  $('cam-btn').querySelector('small').textContent = player.camMode === 'street' ? 'Street' : 'Above';
+}
+$('cam-btn').onclick = () => {
+  player.toggleCamera();
+  renderCam();
+  ui.toast(player.camMode === 'street' ? '🎥 Street view' : '🎥 View from above');
+};
+renderCam();
+
+// Places: landmarks and houses you can get directions to.
+function openPlaces() {
+  $('react-menu').hidden = true;
+  const places = [
+    ...(me ? [{ icon: '🏠', name: 'your house', ...doorPoint(me.home_id || me.id), house: me.home_id || me.id }] : []),
+    { icon: '⛲', name: 'the plaza fountain', x: 0, z: 14 },
+    { icon: '🎣', name: 'the pond', x: PLAZA.pond.x + 13, z: PLAZA.pond.z },
+    { icon: '🚗', name: 'the car showroom', x: PLAZA.showroom.x, z: PLAZA.showroom.z - PLAZA.showroom.hd - 3 },
+    { icon: '🏪', name: 'the market stall', x: PLAZA.stall.x - 4, z: PLAZA.stall.z - 4 },
+    { icon: '🥕', name: 'the grocer', x: PLAZA.grocer.x, z: PLAZA.grocer.z + 4 },
+    { icon: '📋', name: 'the notice board', x: PLAZA.board.x + 4, z: PLAZA.board.z + 4 },
+    { icon: '🛠️', name: 'the workbench', x: PLAZA.workbench.x - 4, z: PLAZA.workbench.z + 4 },
+  ];
+  openSheet('Places', (el) => {
+    el.innerHTML = `
+      <form id="place-find" class="form" autocomplete="off"><label>Directions to someone's house<input name="u" placeholder="instagram_username" autocapitalize="none" /></label><button class="btn primary">🧭 Find &amp; go</button></form>
+      ${places.map((p, i) => `<div class="row"><span class="ico">${p.icon}</span><div class="grow"><b>${p.name.charAt(0).toUpperCase() + p.name.slice(1)}</b><small>${Math.round(Math.hypot(p.x - player.pos.x, p.z - player.pos.z))} m away</small></div><button class="btn" data-go="${i}">🧭 Go</button><button class="btn" data-jump="${i}" title="Jump there">⚡</button></div>`).join('')}`;
+    el.querySelectorAll('[data-go]').forEach((b) =>
+      (b.onclick = () => {
+        closeSheet();
+        directionsTo(places[Number(b.dataset.go)]);
+      }),
+    );
+    el.querySelectorAll('[data-jump]').forEach((b) =>
+      (b.onclick = () => {
+        const p = places[Number(b.dataset.jump)];
+        closeSheet();
+        nav.stop();
+        if (p.house) goToHouse(p.house);
+        else player.teleport(p.x, p.z + 4, p.x, p.z);
+      }),
+    );
+    el.querySelector('#place-find').onsubmit = async (e) => {
+      e.preventDefault();
+      const u = normalizeUsername(e.target.u.value);
+      if (!u) return ui.toast('Type an Instagram username');
+      try {
+        const r = await findHouse(u);
+        if (!r.found) return ui.toast(`No house for @${u} yet`);
+        closeSheet();
+        directionsToHouse(r.id, `@${u}'s house`);
+      } catch (err) {
+        ui.toast(err.message);
+      }
+    };
+  });
+}
+$('places-btn').onclick = openPlaces;
 
 function renderDrive() {
   const has = GAME && Boolean(store.state.car);
@@ -788,6 +889,8 @@ function frame(now) {
   player.update(dt);
   world.update(player.pos.x, player.pos.z, t, dt);
   activities.update(t);
+  nav.update(t);
+  bubbles.update();
   net.update(player, dt, now);
   particles.update(dt);
   world.render(player.body);
@@ -802,4 +905,4 @@ requestAnimationFrame(frame);
 boot();
 
 // Expose a tiny debug handle in development only.
-if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, life, openSignIn, openPassword, setMe: (m) => (me = m) };
+if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, life, nav, net, react, openPlaces, openSignIn, openPassword, setMe: (m) => (me = m) };

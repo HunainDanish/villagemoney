@@ -14,6 +14,12 @@ The live site is in **houses-only mode**. Every follower gets a house, and you c
 
 **Unique, customisable houses:** every house gets its own default look, made from a combination of starter style plus wall, roof, door, trim and shutter colours, with over 1.3 million combinations. They are assigned so the first 1.3 million houses never repeat. Customising is free from your house card (🎨). Upgrades unlock more: starter (style, walls, roof) → Family home (door) → Two-storey (trim) → Manor (shutters) → Mansion (✨ gold and royal colours). Palettes are in [shared/style.js](shared/style.js).
 
+**Getting around:**
+- **Phones:** an on-screen joystick (bottom left) and a 🏃 Run button.
+- **🎥 View:** switches between street level (low, behind you) and the view from above.
+- **😊 React:** wave, ❤️, 😂, 🎉, 😮 and short phrases ("hi!", "nice house!"…) shown as speech bubbles to players nearby. It is a fixed set with no free text, so there is nothing to moderate.
+- **📍 Places and 🧭 Walk here** (on house cards): GPS directions along streets and lanes, with arrows on the ground, a turn-by-turn banner, distance and time, and ▶ to walk there automatically.
+
 - **Switch the game back on:** set `GAME = true` in [shared/features.js](shared/features.js).
 - **The full game exactly as it was** is also saved on the `full-game` branch.
 

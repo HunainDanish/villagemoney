@@ -116,6 +116,35 @@ select { font: inherit; padding: 8px; border-radius: 10px; border: 2px solid var
 .lp-zone { position: absolute; left: 40%; width: 20%; top: 0; bottom: 0; background: #8fd18f; }
 .lp-pin { position: absolute; top: 2px; bottom: 2px; width: 6px; margin-left: -3px; border-radius: 3px; background: var(--ink); }
 .lp-tap { width: 100%; font-size: 20px; }
+/* Joystick (phones) */
+.joy { position: fixed; left: max(18px, env(safe-area-inset-left)); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px); width: 124px; height: 124px; border-radius: 50%; background: rgba(255, 250, 240, .35); border: 2px solid rgba(255, 255, 255, .7); box-shadow: inset 0 0 20px rgba(0,0,0,.08); z-index: 6; touch-action: none; }
+.joy.active { background: rgba(255, 250, 240, .5); }
+.joy-knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255, 250, 240, .95); box-shadow: var(--shadow); pointer-events: none; transition: transform .05s; }
+@media (pointer: fine) { .joy { display: none; } }
+
+/* Side buttons */
+.side { position: fixed; right: max(14px, env(safe-area-inset-right)); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px); display: flex; flex-direction: column; gap: 8px; z-index: 6; }
+.round { width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--line); background: var(--panel); box-shadow: var(--shadow); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.round span { font-size: 20px; line-height: 1; }
+.round small { font-size: 9.5px; font-weight: 800; margin-top: 1px; }
+.round.on { background: var(--accent); color: #fff; border-color: var(--accent-dark); }
+.react-menu { position: fixed; right: calc(max(14px, env(safe-area-inset-right)) + 66px); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 150px); display: grid; grid-template-columns: repeat(3, auto); gap: 6px; background: var(--cream); border: 2px solid var(--line); border-radius: 16px; padding: 8px; box-shadow: var(--shadow); z-index: 8; }
+.react-menu button { border: 0; background: #fff; border-radius: 12px; padding: 8px 10px; font-size: 18px; cursor: pointer; white-space: nowrap; }
+.react-menu button.text { font-size: 13px; font-weight: 800; }
+
+/* Speech bubbles */
+.bubble { position: absolute; left: 0; top: 0; background: #fff; color: var(--ink); border-radius: 14px; padding: 4px 10px; font-size: 22px; font-weight: 900; box-shadow: 0 4px 12px rgba(0,0,0,.18); pointer-events: none; white-space: nowrap; animation: pop .3s cubic-bezier(.2, 1.6, .4, 1); }
+.bubble.text { font-size: 14px; padding: 6px 12px; }
+.bubble::after { content: ''; position: absolute; left: 50%; bottom: -6px; margin-left: -6px; border: 6px solid transparent; border-top-color: #fff; border-bottom: 0; }
+
+/* GPS banner */
+.navbar { position: fixed; left: 50%; top: calc(max(12px, env(safe-area-inset-top)) + 62px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: #2f6fe0; color: #fff; padding: 8px 8px 8px 16px; border-radius: 16px; box-shadow: var(--shadow); z-index: 7; width: min(460px, calc(100vw - 32px)); }
+.nav-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.nav-text { font-size: 16px; font-weight: 900; }
+.nav-sub { font-size: 12px; opacity: .9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.navbar button { width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.2); color: #fff; font-size: 16px; cursor: pointer; }
+@media (max-width: 640px) { .navbar { top: calc(max(12px, env(safe-area-inset-top)) + 150px); } }
+
 [hidden] { display: none !important; }
 
 /* Phones held sideways: short screens need a slimmer HUD. */
@@ -134,7 +163,7 @@ select { font: inherit; padding: 8px; border-radius: 10px; border: 2px solid var
   .chips { order: 2; }
   .search { order: 3; width: 100%; }
   .search input { flex: 1; width: auto; }
-  .badge { top: auto; bottom: 150px; }
+  .badge { top: auto; bottom: 232px; }
   .slot { min-width: 52px; }
   .hint { display: none; }
 }
