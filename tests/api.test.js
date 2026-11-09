@@ -97,3 +97,15 @@ test('auth and admin routes dispatch by URL', async () => {
   const residents = await admin.GET(new Request('http://x/api/admin/residents', { headers: { 'x-admin-secret': 'wrong' } }));
   assert.equal(residents.status, 401);
 });
+
+test('social routes need sign-in and reject unknown actions', async () => {
+  const social = await import('../api/social/[action].js');
+  const res = await social.POST(new Request('http://x/api/social/friend', { method: 'POST', body: '{"username":"a"}' }));
+  assert.equal(res.status, 401);
+  const list = await social.GET(new Request('http://x/api/social/list'));
+  assert.equal(list.status, 401);
+  const unknown = await social.POST(new Request('http://x/api/social/steal', { method: 'POST', body: '{}' }));
+  assert.equal(unknown.status, 404);
+  const wrong = await social.GET(new Request('http://x/api/social/raid'));
+  assert.equal(wrong.status, 405);
+});

@@ -2,6 +2,7 @@ import { db, hasDb } from '../lib/db.js';
 import { json, errorJson, readJson, setCookie } from '../lib/http.js';
 import { currentResident, SESSION_COOKIE } from '../lib/auth.js';
 import { applyForResident } from '../lib/progress.js';
+import { deliverGifts } from '../lib/social.js';
 
 // GET    /api/me            -> who is signed in (or { resident: null })
 // PATCH  /api/me {hidden}   -> change privacy setting
@@ -10,6 +11,7 @@ import { applyForResident } from '../lib/progress.js';
 const MIGRATION_HINT =
   'Your database needs the game update: run supabase/002_game.sql in Supabase → SQL Editor. Until then progress is not saved.';
 const PASSWORD_HINT = 'Passwords need a database update: run supabase/003_passwords.sql in Supabase → SQL Editor.';
+const SOCIAL_HINT = 'Friends, gifts, raids and moving in need a database update: run supabase/004_social.sql in Supabase → SQL Editor.';
 
 export async function GET(request) {
   if (!hasDb()) return json({ resident: null });
@@ -25,7 +27,7 @@ export async function GET(request) {
   if (missingMigration === '002_game.sql') {
     return json({ resident: publicResident, state: null, events: [], warning: MIGRATION_HINT });
   }
-  const passwordWarning = missingMigration === '003_passwords.sql' ? PASSWORD_HINT : undefined;
+  const passwordWarning = { '003_passwords.sql': PASSWORD_HINT, '004_social.sql': SOCIAL_HINT }[missingMigration];
 
   // Porch light: mark today as visited (one small write per resident per day).
   const today = new Date().toISOString().slice(0, 10);
@@ -39,6 +41,14 @@ export async function GET(request) {
     const r = await applyForResident(resident, [{ a: 'checkin' }]);
     state = r.state;
     events = r.results[0]?.events || []; // e.g. the daily streak gift
+    if (!missingMigration) {
+      // Gifts friends sent while you were away.
+      const gifts = await deliverGifts(resident).catch((e) => (console.error('gift delivery failed', e), []));
+      if (gifts.length) {
+        events.push(...gifts);
+        state = (await applyForResident(resident, [{ a: 'checkin' }])).state;
+      }
+    }
   } catch (e) {
     console.error('checkin failed', e); // the town still works without progress
     const missing = /progress|relation|schema cache/i.test(e.message || '');
