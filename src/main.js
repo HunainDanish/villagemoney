@@ -13,7 +13,7 @@ import {
   levelFor, xpForLevel, dailyQuests, questProgress,
 } from '../shared/game.js';
 import { YARD_SLOTS, PLAZA } from '../shared/nodes.js';
-import { JOBS, COOKBOOK, SNACKS, ENERGY_MAX, defenceScore } from '../shared/life.js';
+import { JOBS, COOKBOOK, SNACKS, ENERGY_MAX, defenceScore, STAY, HOUSE_POINT_COST } from '../shared/life.js';
 import { energyNow } from '../shared/game.js';
 import { createLifeUI } from './life-ui.js';
 import { GAME } from '../shared/features.js';
@@ -163,15 +163,42 @@ function openHouse(h, onKnock) {
 // Just houses: a simple card. Your own house, or a neighbour's with knock.
 function openPlainHouse(h, mine, onKnock) {
   openSheet(mine ? 'Your home 🏠' : h.u ? `@${h.u}` : 'A neighbour', (el) => {
+    const tierName = HOUSE_TIERS[(h.t || 1) - 1]?.name || 'Starter home';
     el.innerHTML = `
-      <p>House #${fmt.format(h.id)}${world.houses.get(h.id)?.lit ? ' · porch light is on tonight 🏮' : ''}</p>
-      ${mine ? '<p>This is your house. Your porch light shines at night on days you visit.</p>' : ''}
+      <p>House #${fmt.format(h.id)} · ${tierName}${world.houses.get(h.id)?.lit ? ' · porch light is on tonight 🏮' : ''}</p>
+      ${mine ? upgradeByPointsHTML() : ''}
       <div class="stack">
         ${mine ? '' : '<button class="btn primary" id="h-knock">👋 Knock on the door</button>'}
         ${h.u ? `<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/${encodeURIComponent(h.u)}/">Open on Instagram</a>` : ''}
       </div>`;
     el.querySelector('#h-knock')?.addEventListener('click', () => (closeSheet(), onKnock(h)));
+    el.querySelector('#pt-up')?.addEventListener('click', async () => {
+      const r = await act({ a: 'pointUpgrade' });
+      if (!r.ok) return;
+      sfx.level();
+      syncOwnHouse();
+      const p = housePosition(me.home_id || me.id);
+      for (let i = 0; i < 4; i++) setTimeout(() => particles.sparkle(p.x + (Math.random() - 0.5) * 8, 4 + Math.random() * 4, p.z + (Math.random() - 0.5) * 6), i * 180);
+      player.shake = 0.4;
+      ui.celebrate(`🏡 Upgraded to ${r.events.find((e) => e.type === 'upgrade')?.name}!`);
+      openPlainHouse({ ...h, t: store.state.tier }, true, onKnock);
+    });
   });
+}
+
+// Today's progress, points and the next upgrade, for your own house card.
+function upgradeByPointsHTML() {
+  const s = store.state;
+  const mins = Math.min(STAY.minutesPerPoint, s.counts?.minutes || 0);
+  const done = mins >= STAY.minutesPerPoint;
+  const tier = s.tier || 1;
+  const nextCost = HOUSE_POINT_COST[tier + 1];
+  const next = HOUSE_TIERS[tier];
+  const pts = s.points || 0;
+  return `
+    <p>This is your house. Spend <b>15 active minutes</b> in town each day to earn <b>1 house point</b>, then use points to upgrade.</p>
+    <div class="row"><span class="ico">⏳</span><div class="grow"><b>Today: ${mins}/${STAY.minutesPerPoint} min${done ? ' ✓ point earned' : ''}</b><div class="bar"><i style="width:${(mins / STAY.minutesPerPoint) * 100}%"></i></div><small>${done ? 'Come back tomorrow for another point.' : 'Only counts while this tab is open and you are moving around.'}</small></div></div>
+    ${next ? `<div class="row"><span class="ico">⬆️</span><div class="grow"><b>Upgrade to ${next.name}</b><small>${next.blurb}</small><small>🏠 ${pts}/${nextCost} house points</small></div><button class="btn ${pts >= nextCost ? 'good' : ''}" id="pt-up" ${pts >= nextCost ? '' : 'disabled'}>Upgrade</button></div>` : '<p>🏆 Your house is fully upgraded: a mansion!</p>'}`;
 }
 
 function openBag() {
@@ -244,6 +271,11 @@ function openShop() {
 // My house: upgrade, paint and decorate, standing in front of it so every
 // change is visible immediately.
 function openMyHouse() {
+  if (!GAME && me) {
+    const id = me.home_id || me.id;
+    const rec = (world.drawnAll || []).find((x) => x.id === id) || { id, u: me.username };
+    return openPlainHouse({ ...rec, t: store.state.tier || 1 }, true, () => {});
+  }
   if (!me) {
     return openSheet('Your own house', (el) => {
       el.innerHTML = `<p>Every follower gets a house in town. ${isDemo() ? 'Sign-in is off in demo mode.' : 'DM us the word <b>key</b> on Instagram to get yours, then upgrade, paint and decorate it here.'}</p>
@@ -555,6 +587,26 @@ $('drive-btn').onclick = () => {
 };
 
 // Show the drive button once you own a car.
+// ---------- daily stay timer ----------
+// One "tick" per minute while the tab is visible and you've moved or tapped
+// in the last 3 minutes. The server checks the timing; 15 a day = 1 point.
+let lastInput = performance.now();
+for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) addEventListener(ev, () => (lastInput = performance.now()), { passive: true });
+setInterval(() => {
+  if (GAME || !me || document.visibilityState !== 'visible') return;
+  const active = performance.now() - lastInput < 3 * 60e3 || player.moving;
+  if (active) store.act({ a: 'tick' });
+}, STAY.tickMs);
+
+function renderStay() {
+  const chip = $('stay');
+  chip.hidden = GAME || !me;
+  if (chip.hidden) return;
+  const s = store.state;
+  const mins = Math.min(STAY.minutesPerPoint, s.counts?.minutes || 0);
+  chip.textContent = `${mins >= STAY.minutesPerPoint ? '✅' : '⏳'} ${mins}/${STAY.minutesPerPoint} min · 🏠 ${s.points || 0}`;
+}
+
 function renderDrive() {
   const has = GAME && Boolean(store.state.car);
   $('drive-btn').hidden = !has;
@@ -606,6 +658,8 @@ store.on((state, events) => {
   $('coins').textContent = `🪙 ${fmt.format(state.coins)}`;
   $('energy').textContent = `⚡ ${energyNow(state, Date.now())}`;
   renderDrive();
+  renderStay();
+  for (const e of events || []) if (e.type === 'point') ui.celebrate(`🏠 +1 house point! You have ${e.points}. Upgrade at your house.`);
   if (events?.some((e) => e.type === 'coins')) {
     $('coins').classList.remove('bump');
     void $('coins').offsetWidth;
@@ -658,6 +712,7 @@ async function boot() {
   }
   renderMe();
   syncOwnHouse();
+  renderStay();
   const params = new URLSearchParams(location.search);
   if (me && params.has('home')) {
     goToHouse(me.home_id || me.id);

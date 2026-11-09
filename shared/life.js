@@ -89,3 +89,11 @@ export const CARS = {
   van: { name: 'Camper van', price: 2400, speed: 28, color: 0xf2c94c },
   sports: { name: 'Sports car', price: 5000, speed: 42, color: 0xe85d24 },
 };
+
+// ---------- daily stay -> house points (houses-only mode) ----------
+// Every active minute in town counts (the browser sends one "tick" a minute
+// while the tab is open and you've moved or tapped recently). 15 minutes in
+// a day earns 1 house point; points pay for house upgrades.
+export const STAY = { minutesPerPoint: 15, pointsPerDay: 1, tickMs: 60e3 };
+// Points needed to reach each tier (index = tier).
+export const HOUSE_POINT_COST = [null, null, 2, 5, 10, 20];

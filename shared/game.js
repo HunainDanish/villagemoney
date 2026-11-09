@@ -8,7 +8,7 @@
 import { NODE_KINDS, MAX_COOLDOWN_MS, nodeById, YARD_SLOTS } from './nodes.js';
 import {
   ENERGY_MAX, ENERGY_REGEN_MS, ENERGY_COST, CROPS, GARDEN_PLOTS, GROCER, COOKBOOK, SNACKS,
-  JOBS, LOCKS, GUARD_DOG, ALARM, RAID, CARS,
+  JOBS, LOCKS, GUARD_DOG, ALARM, RAID, CARS, STAY, HOUSE_POINT_COST,
 } from './life.js';
 
 export const ITEMS = {
@@ -532,6 +532,33 @@ export function applyAction(s, action, ctx) {
       } else {
         s.coins += action.fine || 0;
       }
+      return { ok: true, events };
+    }
+
+    // ---------- daily stay -> house points ----------
+    case 'tick': {
+      // One active minute. The server's clock decides: at most one per ~minute.
+      if (now - (s.lastTick || 0) < STAY.tickMs - 10e3) return fail('too soon');
+      s.lastTick = now;
+      const cap = STAY.minutesPerPoint * STAY.pointsPerDay;
+      const m = s.counts.minutes || 0;
+      if (m >= cap) return { ok: true, events };
+      s.counts.minutes = m + 1;
+      if ((m + 1) % STAY.minutesPerPoint === 0) {
+        s.points = (s.points || 0) + 1;
+        events.push({ type: 'point', points: s.points });
+      }
+      return { ok: true, events };
+    }
+
+    case 'pointUpgrade': {
+      const next = (s.tier || 1) + 1;
+      const cost = HOUSE_POINT_COST[next];
+      if (!cost) return fail('your house is fully upgraded');
+      if ((s.points || 0) < cost) return fail(`you need ${cost} house points (you have ${s.points || 0})`);
+      s.points -= cost;
+      s.tier = next;
+      events.push({ type: 'decor' }, { type: 'upgrade', tier: next, name: HOUSE_TIERS[next - 1].name });
       return { ok: true, events };
     }
 

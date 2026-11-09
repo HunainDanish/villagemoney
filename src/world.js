@@ -597,7 +597,8 @@ export class World {
     for (const houses of this.blocks.values()) {
       for (const h0 of houses || []) {
         const full = this.overrides.has(h0.id) ? { ...h0, ...this.overrides.get(h0.id) } : h0;
-        const h = GAME ? full : { id: full.id, u: full.u, lit: full.lit };
+        // Houses-only mode still shows upgrades (earned with house points).
+        const h = GAME ? full : { id: full.id, u: full.u, lit: full.lit, t: full.t };
         if (h.mv) continue; // moved in with someone: this plot stands empty
         const p = housePosition(h.id);
         const seed = hash(h.id);
@@ -915,7 +916,7 @@ export class World {
     const h = this.houses.get(id) || (this.overrides.has(id) ? { id } : null);
     if (h && (!GAME || !h.mv)) {
       // Footprint of this house's model, in the house's own frame.
-      const tier = GAME ? (this.overrides.get(id)?.t ?? h.t ?? 1) : 1;
+      const tier = this.overrides.get(id)?.t ?? h.t ?? 1;
       const meta = this.models[modelFor(id, tier, hash(id))].meta;
       const p = housePosition(id);
       const dx = x - p.x;
