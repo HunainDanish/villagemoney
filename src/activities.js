@@ -46,7 +46,8 @@ export class Activities {
     if (this.current?.type === 'fish' && this.current.phase === 'bite') return this.#reel();
     if (hit.node) return this.#goNode(hit.node);
     if (hit.station) return this.#goStation(hit.station, hit.at);
-    if (hit.house) return this.ui.openHouse(hit.house, () => this.knock(hit.house));
+    if (hit.bed) return this.ui.openBed(hit.bed, (h, then) => this.knock(h, then));
+    if (hit.house) return this.ui.openHouse(hit.house, (h, then) => this.knock(h || hit.house, then));
     if (hit.ground) this.player.walkTo(hit.ground.x, hit.ground.z);
   }
 
@@ -148,6 +149,8 @@ export class Activities {
       if (name === 'workbench') this.ui.openCraft();
       else if (name === 'stall') this.ui.openShop();
       else if (name === 'board') this.ui.openQuests();
+      else if (name === 'grocer') this.ui.openGrocer();
+      else if (name === 'showroom') this.ui.openShowroom();
     });
   }
 
@@ -218,14 +221,17 @@ export class Activities {
   }
 
   // ---------- knocking (quest: visit neighbours) ----------
-  async knock(house) {
+  // Walk to the front door, then knock (or, with `then`, do something else
+  // there, e.g. start a raid).
+  async knock(house, then) {
     const near = Math.hypot(house.x - this.player.pos.x, house.z - this.player.pos.z) < 14;
     if (!near) {
       const door = { x: house.x + Math.sin(house.facing) * 6.5, z: house.z + Math.cos(house.facing) * 6.5 };
-      this.player.walkTo(door.x, door.z, 1.2, () => this.knock(house));
+      this.player.walkTo(door.x, door.z, 1.2, () => this.knock(house, then));
       return;
     }
     this.player.face(house.x, house.z);
+    if (then) return then();
     this.player.char.play('wave');
     sfx.click();
     setTimeout(sfx.click, 160);

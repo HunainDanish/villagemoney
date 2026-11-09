@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { Character } from './character.js';
+import { carGeometry } from './props.js';
+import { CARS } from '../shared/life.js';
 
 const damp = THREE.MathUtils.damp;
 
@@ -83,6 +85,30 @@ export class Player {
     });
   }
 
+  // Drive a car (model id) or walk again (null). While driving you move at the
+  // car's speed and are drawn as the car.
+  setVehicle(model) {
+    if (this.carMesh) {
+      this.world.scene.remove(this.carMesh);
+      this.carMesh = null;
+    }
+    this.vehicle = CARS[model] ? model : null;
+    if (this.vehicle) {
+      const mesh = new THREE.Mesh(carGeometry(model), new THREE.MeshLambertMaterial({ vertexColors: true, color: CARS[model].color }));
+      mesh.castShadow = true;
+      mesh.position.copy(this.pos);
+      mesh.rotation.y = this.char.heading;
+      this.world.scene.add(mesh);
+      this.carMesh = mesh;
+    }
+    this.char.group.visible = !this.vehicle;
+  }
+
+  // What to draw for the player (used by the see-through-houses outline).
+  get body() {
+    return this.carMesh || this.char.group;
+  }
+
   // Look like other players see you: characters are styled from the name.
   setName(name) {
     if (name === this.lookName) return;
@@ -94,6 +120,7 @@ export class Player {
     this.char.group.rotation.y = old.group.rotation.y;
     this.world.scene.remove(old.group);
     this.world.scene.add(this.char.group);
+    this.char.group.visible = !this.vehicle; // stay hidden while driving
   }
 
   // Walk to (x, z); call onArrive when within `range`.
@@ -146,7 +173,7 @@ export class Player {
     }
 
     const running = k.has('shift') || (this.target && Math.hypot(this.target.x - this.pos.x, this.target.z - this.pos.z) > 30);
-    const want = dir ? (running ? 26 : 14) : 0;
+    const want = dir ? (this.vehicle ? CARS[this.vehicle].speed * (running ? 1.25 : 1) : running ? 26 : 14) : 0;
     this.speed = damp(this.speed, want, 10, dt);
     this.moving = Boolean(dir);
     if (dir) {
@@ -177,6 +204,10 @@ export class Player {
     this.char.group.position.copy(this.pos);
     this.char.face(this.heading, dt);
     this.char.update(dt, this.moving ? this.speed : 0);
+    if (this.carMesh) {
+      this.carMesh.position.copy(this.pos).setY(0.3);
+      this.carMesh.rotation.y = this.char.heading;
+    }
 
     // Third-person camera: ~45 degree pitch, damped, looks ahead.
     const dist = 30 * this.zoom;

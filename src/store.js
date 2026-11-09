@@ -57,6 +57,23 @@ export class Store {
     return this.act({ a: 'checkin' });
   }
 
+  // Replace local state with a fresh copy from the server (e.g. after a
+  // gift or raid), re-applying anything still queued locally.
+  setServerState(serverState) {
+    if (!serverState?.v) return;
+    this.state = applyBatch(serverState, this.queue, this.ctx()).state;
+    this.#emit([{ type: 'decor' }]);
+  }
+
+  // Demo / guest only: apply a server-only action locally (practice raids).
+  applyLocal(action) {
+    if (this.member) return;
+    const { state, results } = applyBatch(this.state, [action], { ...this.ctx(), trusted: true });
+    this.state = state;
+    writeLocal(KEY, this.state);
+    this.#emit(results[0].events);
+  }
+
   initMember(resident, serverState, events = []) {
     this.member = true;
     this.seed = String(resident.id);

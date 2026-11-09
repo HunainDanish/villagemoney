@@ -13,6 +13,9 @@ import {
   levelFor, xpForLevel, dailyQuests, questProgress,
 } from '../shared/game.js';
 import { YARD_SLOTS, PLAZA } from '../shared/nodes.js';
+import { JOBS, COOKBOOK, SNACKS, ENERGY_MAX, defenceScore } from '../shared/life.js';
+import { energyNow } from '../shared/game.js';
+import { createLifeUI } from './life-ui.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat();
@@ -72,6 +75,10 @@ const ui = {
   openCraft,
   openShop,
   openQuests,
+  openGrocer: () => life.openGrocer(),
+  openShowroom: () => life.openShowroom(),
+  // Tapped a garden bed: your own opens the garden, others open the house card.
+  openBed: (bed, knock) => (me && bed.house.id === me.id ? life.openGarden() : openHouse(bed.house, knock)),
 };
 
 const player = new Player(world, $('scene'), {
@@ -127,17 +134,27 @@ async function act(action) {
 }
 
 function openHouse(h, onKnock) {
-  const mine = me?.id === h.id;
+  const mine = me?.id === h.id || (me?.home_id && me.home_id === h.id);
   if (mine) return openMyHouse();
-  openSheet(h.u ? `@${h.u}` : 'A neighbour', (el) => {
+  openSheet(h.label || (h.u ? `@${h.u}` : 'A neighbour'), (el) => {
+    const job = h.j && JOBS[h.j] ? `${JOBS[h.j].icon} ${JOBS[h.j].name}` : '';
+    const def = h.df ? (h.df.lock || 0) + (h.df.dog ? 2 : 0) + (h.df.alarm ? 1 : 0) + (h.j === 'guard' ? 2 : 0) : h.j === 'guard' ? 2 : 0;
+    const tags = [
+      `House #${fmt.format(h.id)}`,
+      HOUSE_TIERS[(h.t || 1) - 1]?.name,
+      job,
+      world.houses.get(h.id)?.lit ? 'porch light on 🏮' : '',
+      h.r ? ((h.sh || 0) > Date.now() ? '🛡️ shielded' : `⚔️ raid mode · defence ${def}`) : '',
+    ].filter(Boolean);
     el.innerHTML = `
-      <p>House #${fmt.format(h.id)}${mine ? ' · this is your home' : ''}${world.houses.get(h.id)?.lit ? ' · porch light is on tonight 🏮' : ''}</p>
+      <p>${tags.join(' · ')}</p>
       <div class="stack">
-        ${mine ? '<button class="btn primary" id="h-decor">🪴 Decorate my yard</button>' : '<button class="btn primary" id="h-knock">👋 Knock on the door</button>'}
+        <button class="btn primary" id="h-knock">👋 Knock on the door</button>
+        ${life.houseActions(h)}
         ${h.u ? `<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/${encodeURIComponent(h.u)}/">Open on Instagram</a>` : ''}
       </div>`;
-    el.querySelector('#h-knock')?.addEventListener('click', () => (closeSheet(), onKnock()));
-    el.querySelector('#h-decor')?.addEventListener('click', openDecor);
+    el.querySelector('#h-knock')?.addEventListener('click', () => (closeSheet(), onKnock(h)));
+    life.bindHouseActions(el, h, (house, then) => onKnock(house, then));
   });
 }
 
@@ -145,6 +162,7 @@ function openBag() {
   openSheet('Bag', (el) => {
     const s = store.state;
     const items = Object.entries(s.items).filter(([, n]) => n > 0);
+    const food = items.filter(([k]) => COOKBOOK[k] || SNACKS[k]);
     const skills = Object.entries(SKILLS).map(([k, name]) => {
       const xp = s.xp[k] || 0;
       const lvl = levelFor(xp);
@@ -154,8 +172,10 @@ function openBag() {
     el.innerHTML = `
       <p>🪙 ${fmt.format(s.coins)} coins · 🔥 ${s.streak || 0}-day streak</p>
       ${items.length ? `<div class="grid">${items.map(([k, n]) => `<div class="cell"><span class="qty">${n}</span><span class="ico">${ITEMS[k]?.icon || '❔'}</span>${esc(ITEMS[k]?.name || k)}</div>`).join('')}</div>` : '<p>Your bag is empty. Tap a tree to chop it, or a flower to pick it.</p>'}
+      ${food.length ? `<h3>Food · ⚡ ${energyNow(s, Date.now())}/${ENERGY_MAX}</h3>${food.map(([k, n]) => `<div class="row"><span class="ico">${ITEMS[k].icon}</span><div class="grow"><b>${ITEMS[k].name} × ${n}</b><small>+${COOKBOOK[k]?.energy ?? SNACKS[k]} ⚡</small></div><button class="btn" data-eat="${k}">Eat</button></div>`).join('')}` : ''}
       <h3>Skills</h3>${skills.join('')}
       ${!store.member ? `<p>${isDemo() ? 'Demo mode: progress is saved in this browser.' : 'Playing as a guest: progress is saved in this browser only. Get a house key to keep it.'}</p>` : ''}`;
+    el.querySelectorAll('[data-eat]').forEach((b) => (b.onclick = () => life.eat(b.dataset.eat)));
   });
 }
 
@@ -219,7 +239,7 @@ function openMyHouse() {
     const tier = s.tier || 1;
     const cur = HOUSE_TIERS[tier - 1];
     const next = HOUSE_TIERS[tier];
-    let upgrade = '<p>🏆 Your house is fully upgraded. Neighbours can see your manor from down the street.</p>';
+    let upgrade = '<p>🏆 Your house is fully upgraded. Neighbours can see your mansion from down the street.</p>';
     if (next) {
       const { coins = 0, ...mats } = next.cost;
       const have = (i) => s.items[i] || 0;
@@ -235,8 +255,20 @@ function openMyHouse() {
       ${upgrade}
       <h3>Wall paint · ${PAINT_PRICE} 🪙 each</h3>${swatches(WALL_PAINTS, 'wall')}
       <h3>Roof paint · ${PAINT_PRICE} 🪙 each</h3>${swatches(ROOF_PAINTS, 'roof')}
-      <div class="stack"><button class="btn" id="decor-btn">🪴 Decorate my yard</button></div>`;
+      <div class="stack">
+        <button class="btn" id="decor-btn">🪴 Decorate my yard</button>
+        <button class="btn" id="garden-btn">🌱 Garden</button>
+        <button class="btn" id="kitchen-btn">🍳 Kitchen</button>
+        <button class="btn" id="job-btn">💼 Job${s.job && JOBS[s.job] ? `: ${JOBS[s.job].icon} ${JOBS[s.job].name}` : ''}</button>
+        <button class="btn" id="defence-btn">🛡️ Defences &amp; raid mode · ${defenceScore(s)}</button>
+        <button class="btn" id="garage-btn">🚗 Cars${s.cars?.length ? ` (${s.cars.length})` : ''}</button>
+      </div>`;
     el.querySelector('#decor-btn').onclick = openDecor;
+    el.querySelector('#garden-btn').onclick = life.openGarden;
+    el.querySelector('#kitchen-btn').onclick = life.openKitchen;
+    el.querySelector('#job-btn').onclick = life.openJob;
+    el.querySelector('#defence-btn').onclick = life.openDefence;
+    el.querySelector('#garage-btn').onclick = life.openShowroom;
     el.querySelector('#up-btn')?.addEventListener('click', async () => {
       const r = await act({ a: 'upgrade' });
       if (!r.ok) return;
@@ -357,7 +389,7 @@ function liveStatus() {
 function goHome() {
   if (!me) return openMyHouse();
   closeSheet();
-  goToHouse(me.id);
+  goToHouse(me.home_id || me.id);
   openMyHouse();
 }
 
@@ -401,7 +433,7 @@ function openDecor() {
         if (r.ok) {
           sfx.pickup();
           syncOwnHouse();
-          goToHouse(me.id, false);
+          goToHouse(me.home_id || me.id, false);
         }
       }),
     );
@@ -489,6 +521,52 @@ $('plaza-btn').onclick = () => {
   ui.toast('Welcome to the plaza: workbench, market, pond and quest board');
 };
 $('home-btn').onclick = goHome;
+$('friends-btn').onclick = () => life.openFriends();
+$('drive-btn').onclick = () => {
+  if (player.vehicle) {
+    player.setVehicle(null);
+    world.hiddenCar = null;
+    ui.toast('You parked and got out 🚶');
+  } else {
+    const car = store.state.car;
+    if (!car) return life.openShowroom();
+    player.setVehicle(car);
+    world.hiddenCar = me?.id ?? null;
+    ui.toast('Vroom! Tap 🚗 again to get out');
+  }
+  world.dirtyHouses = true;
+  renderDrive();
+};
+
+// Show the drive button once you own a car.
+function renderDrive() {
+  const has = Boolean(store.state.car);
+  $('drive-btn').hidden = !has;
+  $('drive-btn').classList.toggle('primary', Boolean(player.vehicle));
+}
+
+function setUnseen(n) {
+  $('friends-badge').hidden = !n;
+  $('friends-badge').textContent = n > 9 ? '9+' : String(n);
+}
+
+async function getJSON(path) {
+  const res = await fetch(path, { credentials: 'same-origin' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+const life = createLifeUI({
+  store, world, player, particles, sfx, ui, openSheet, closeSheet, act, send, isDemo, esc, fmt,
+  getMe: () => me,
+  getJSON,
+  setUnseen,
+  goToHouse,
+  syncOwnHouse: () => syncOwnHouse(),
+  renderDrive: () => renderDrive(),
+  refreshWorld: () => me && world.refreshBlock(blockOfHouse(me.home_id || me.id)),
+});
 
 function renderMe() {
   $('home-btn').hidden = !me;
@@ -500,11 +578,18 @@ function renderMe() {
 // Show my own decor/paint right away (the shared CDN copy updates later).
 function syncOwnHouse() {
   if (!me) return;
-  world.setOverride(me.id, { d: store.state.decor, p: store.state.paint, t: store.state.tier || 1, lit: 1 });
+  const s = store.state;
+  world.setOverride(me.id, {
+    d: s.decor, p: s.paint, t: s.tier || 1, lit: 1,
+    g: s.garden, j: s.job, c: s.car,
+    df: s.defence, r: s.raid?.on ? 1 : 0, sh: s.raid?.shield || 0,
+  });
 }
 
 store.on((state, events) => {
   $('coins').textContent = `🪙 ${fmt.format(state.coins)}`;
+  $('energy').textContent = `⚡ ${energyNow(state, Date.now())}`;
+  renderDrive();
   if (events?.some((e) => e.type === 'coins')) {
     $('coins').classList.remove('bump');
     void $('coins').offsetWidth;
@@ -553,11 +638,15 @@ async function boot() {
   syncOwnHouse();
   const params = new URLSearchParams(location.search);
   if (me && params.has('home')) {
-    goToHouse(me.id);
+    goToHouse(me.home_id || me.id);
     ui.celebrate(`Welcome home, @${me.username}! 🏠`);
     if (!me.has_password && !me.demo) setTimeout(() => ui.toast('Tip: set a password in ⚙️ Menu to sign in on any device without a new key.'), 3500);
     history.replaceState(null, '', '/');
   }
+
+  if (me && !me.demo) getJSON('/api/social/list').then((d) => setUnseen(d.unseen)).catch(() => {});
+  setInterval(() => ($('energy').textContent = `⚡ ${energyNow(store.state, Date.now())}`), 30000);
+  for (const e of res.events || []) if (e.type === 'received') ui.celebrate(`🎁 Gift from @${e.from}!`);
 
   if (await net.connect(cfg.supabaseUrl, cfg.supabaseAnonKey)) addEventListener('pagehide', () => net.leave());
   else if (isDemo()) net.startBots();
@@ -581,7 +670,7 @@ function frame(now) {
   activities.update(t);
   net.update(player, dt, now);
   particles.update(dt);
-  world.render(player.char.group);
+  world.render(player.body);
   drawLabels();
   if (now - clockAt > 1000) {
     clockAt = now;
@@ -593,4 +682,4 @@ requestAnimationFrame(frame);
 boot();
 
 // Expose a tiny debug handle in development only.
-if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, openSignIn, openPassword, setMe: (m) => (me = m) };
+if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, life, openSignIn, openPassword, setMe: (m) => (me = m) };

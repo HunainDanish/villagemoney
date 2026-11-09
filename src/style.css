@@ -105,6 +105,14 @@ select { font: inherit; padding: 8px; border-radius: 10px; border: 2px solid var
 .form input { font: inherit; font-size: 16px; padding: 10px 12px; border: 2px solid var(--line); border-radius: 12px; background: #fff; }
 .form input:focus { outline: none; border-color: var(--accent); }
 .form-error { color: var(--danger); font-size: 14px; margin: 0; }
+.slot { position: relative; }
+.badge-dot { position: absolute; top: 2px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #d94141; color: #fff; font-size: 11px; font-style: normal; font-weight: 900; line-height: 18px; text-align: center; }
+.wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.lockpick { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); background: var(--cream); border: 2px solid var(--line); border-radius: 18px; padding: 18px; box-shadow: var(--shadow); z-index: 30; text-align: center; }
+.lp-bar { position: relative; height: 26px; border-radius: 999px; background: #f0e4cc; overflow: hidden; margin: 12px 0; }
+.lp-zone { position: absolute; left: 40%; width: 20%; top: 0; bottom: 0; background: #8fd18f; }
+.lp-pin { position: absolute; top: 2px; bottom: 2px; width: 6px; margin-left: -3px; border-radius: 3px; background: var(--ink); }
+.lp-tap { width: 100%; font-size: 20px; }
 [hidden] { display: none !important; }
 
 /* Phones held sideways: short screens need a slimmer HUD. */

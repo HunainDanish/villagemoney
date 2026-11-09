@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { Character } from './character.js';
+import { carGeometry } from './props.js';
+import { CARS } from '../shared/life.js';
 import { PITCH } from '../shared/layout.js';
 
 // Live "who is walking near me" using Supabase Realtime.
@@ -60,7 +62,7 @@ export class Net {
   }
 
   #me(player) {
-    return { i: this.id, n: this.name, x: +player.pos.x.toFixed(1), z: +player.pos.z.toFixed(1), h: +player.heading.toFixed(2) };
+    return { i: this.id, n: this.name, x: +player.pos.x.toFixed(1), z: +player.pos.z.toFixed(1), h: +player.heading.toFixed(2), v: player.vehicle || null };
   }
 
   #join(region, player) {
@@ -123,6 +125,19 @@ export class Net {
       this.peers.set(p.i, peer);
     }
     if (peer.label.textContent !== name) peer.label.textContent = name;
+    // Driving? Show their car instead of their character.
+    const v = CARS[p.v] ? p.v : null;
+    if (v !== (peer.v || null)) {
+      if (peer.car) this.world.scene.remove(peer.car);
+      peer.car = null;
+      if (v) {
+        peer.car = new THREE.Mesh(carGeometry(v), new THREE.MeshLambertMaterial({ vertexColors: true, color: CARS[v].color }));
+        peer.car.position.copy(peer.char.group.position).setY(0.3);
+        this.world.scene.add(peer.car);
+      }
+      peer.v = v;
+      peer.char.group.visible = !v;
+    }
     peer.to.set(p.x, 0, p.z);
     peer.h = p.h;
     peer.last = performance.now();
@@ -132,6 +147,7 @@ export class Net {
     const peer = this.peers.get(id);
     if (!peer) return;
     this.world.scene.remove(peer.char.group);
+    if (peer.car) this.world.scene.remove(peer.car);
     peer.char.dispose();
     peer.label.remove();
     this.peers.delete(id);
@@ -161,7 +177,7 @@ export class Net {
       if (joined && !player.moving && now - (this.lastTrack || 0) > 1000) {
         const me = this.#me(player);
         const t = this.tracked;
-        if (!t || t.n !== me.n || Math.hypot(t.x - me.x, t.z - me.z) > 0.5) {
+        if (!t || t.n !== me.n || t.v !== me.v || Math.hypot(t.x - me.x, t.z - me.z) > 0.5) {
           this.tracked = me;
           this.lastTrack = now;
           this.channel.track(me);
@@ -194,6 +210,10 @@ export class Net {
         peer.char.face(peer.h, dt);
       }
       peer.char.update(dt, dist > 0.05 ? step / dt : 0);
+      if (peer.car) {
+        peer.car.position.copy(g.position).setY(0.3);
+        peer.car.rotation.y = peer.char.heading;
+      }
       v.copy(g.position).setY(4.8).project(cam);
       const on = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
       peer.label.style.display = on ? '' : 'none';

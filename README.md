@@ -82,6 +82,23 @@ Run **`supabase/003_passwords.sql`** once in Supabase → SQL Editor.
 - **Wrong guesses:** after 5 wrong passwords the account locks for 15 minutes. A house key still works during a lock.
 - **Forgot the password?** DM "key" for a new link, then set a new password.
 
+## Town life update (run supabase/004_social.sql)
+
+Run **`supabase/004_social.sql`** once in Supabase → SQL Editor. Without it, everything still works except friends, gifts, moving in and raids, and the site tells you the file is missing.
+
+| Feature | Where | How it works |
+|---|---|---|
+| ⚡ Energy | Top bar | Chopping, mining, fishing, planting and raids use energy. It refills 1 every 2 min, or faster by eating |
+| 🌱 Farming | 3 beds behind your house (🏠 → Garden) | Buy seeds at the **grocer** (plaza), plant, wait in real time, harvest. Visitors see your crops grow |
+| 🍳 Cooking | 🏠 → Kitchen | 6 meals from crops, groceries and fish. Eat them for energy |
+| 💼 Jobs | 🏠 → Job | Farmer, Woodcutter, Miner, Fisher, Merchant, Guard or Builder, each with a bonus. Change once a day |
+| 🛡️ Defences | 🏠 → Defences | Locks (3 levels), guard dog, alarm bell. Raise your defence score; the dog and bell show in your yard |
+| ⚔️ Raids (opt-in) | 🏠 → Defences → Raid mode | Only raid-mode houses (red flag) can raid or be raided, and the mode stays on for 24 h. A lock-pick mini-game sets your odds. Loot: 10% of materials (max 15 each) and 5% of coins (max 60). Shield for 6 h after a raid; caught raiders pay a fine; friends can't raid each other |
+| 👥 Friends | 👥 in the bar, or a house card | Requests, friends list, visit, gifts (once a day, a gift grows ❤️ hearts up to 10), rivals, inbox |
+| 🏡 Move in together | House card → Ask to move in | Needs friends with 3 ❤️. The mover's old plot empties and the house shows both names |
+| 🚗 Cars | **Showroom** (plaza) | 4 cars. Your car parks in your driveway, and 🚗 in the bar lets you drive. Other players see you driving |
+| 🏰 Bigger houses | 🏠 → Upgrade | 5 tiers, and the house grows with each: starter → family home → two-storey → manor → **mansion** (3 floors, towers) |
+
 ## The game
 
 | Activity | Where | Reward |
