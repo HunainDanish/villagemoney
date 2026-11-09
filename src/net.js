@@ -27,7 +27,6 @@ export class Net {
     this.channel = null;
     this.region = null;
     this.lastSend = 0;
-    this.wasMoving = false;
     this.others = 0;
     this.client = null;
     this.status = 'off'; // off | connecting | live | error
@@ -76,7 +75,9 @@ export class Net {
     ch.subscribe((status, err) => {
       if (status === 'SUBSCRIBED') {
         this.status = 'live';
-        ch.track(this.#me(player));
+        this.tracked = this.#me(player);
+        this.lastTrack = performance.now();
+        ch.track(this.tracked);
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         this.status = 'error';
         this.error = err?.message || status;
@@ -154,9 +155,18 @@ export class Net {
         this.lastSend = now;
         this.channel.send({ type: 'broadcast', event: 'p', payload: this.#me(player) });
       }
-      // Stopped walking: one presence update so newcomers see where you stand.
-      if (joined && this.wasMoving && !player.moving) this.channel.track(this.#me(player));
-      this.wasMoving = player.moving;
+      // Whenever you're standing somewhere new (stopped walking, or jumped via
+      // Home / Plaza / search) or your name changed (signed in), update your
+      // presence so everyone sees you in the right place. Max ~1 update/second.
+      if (joined && !player.moving && now - (this.lastTrack || 0) > 1000) {
+        const me = this.#me(player);
+        const t = this.tracked;
+        if (!t || t.n !== me.n || Math.hypot(t.x - me.x, t.z - me.z) > 0.5) {
+          this.tracked = me;
+          this.lastTrack = now;
+          this.channel.track(me);
+        }
+      }
     }
 
     const cam = this.world.camera;
@@ -168,8 +178,13 @@ export class Net {
         continue;
       }
       const g = peer.char.group;
-      const dist = g.position.distanceTo(peer.to);
-      // Walk toward the last known position at walking speed (no teleporting).
+      let dist = g.position.distanceTo(peer.to);
+      // Far jump (they used Home / Plaza / search): appear there, don't slide.
+      if (dist > 40) {
+        g.position.copy(peer.to);
+        dist = 0;
+      }
+      // Otherwise walk toward the last known position at walking speed.
       const step = Math.min(dist, Math.max(14, dist * 2) * dt);
       if (dist > 0.05) {
         const dir = peer.to.clone().sub(g.position).normalize();

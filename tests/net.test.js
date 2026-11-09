@@ -146,3 +146,29 @@ test('walking is broadcast and the other player follows', async () => {
   const seen = [...b.peers.values()][0];
   assert.ok(seen.to.x > 25, `B should see A at x~30, saw ${seen.to.x}`);
 });
+
+test('jumping (Home / Plaza / search) is announced, and others draw you there', async () => {
+  const hub = makeHub();
+  const a = makeNet(hub, 'hunain_danish');
+  const b = makeNet(hub, 'dravidfc');
+  const pa = makePlayer(0, 24); // where everyone starts
+  const pb = makePlayer(120, 60); // standing at a house
+  await tick([a, b], [pa, pb]);
+  pa.pos.set(118, 0, 64); // A presses Home and lands next to B, without walking
+  await tick([a, b], [pa, pb], 600, 4);
+  const seenByB = [...b.peers.values()][0];
+  assert.ok(seenByB, 'B should see A');
+  assert.ok(seenByB.char.group.position.distanceTo(pa.pos) < 1, `B draws A at ${seenByB.char.group.position.toArray()}`);
+});
+
+test('signing in updates the name others see', async () => {
+  const hub = makeHub();
+  const a = makeNet(hub, 'Neighbour');
+  const b = makeNet(hub, 'b');
+  const pa = makePlayer(0, 20);
+  const pb = makePlayer(3, 22);
+  await tick([a, b], [pa, pb]);
+  a.name = 'hunain_danish';
+  await tick([a, b], [pa, pb], 600, 4);
+  assert.equal([...b.peers.values()][0].label.textContent, 'hunain_danish');
+});
