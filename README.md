@@ -6,6 +6,13 @@ A small 3D town in the browser where every follower gets a house. "Porchlight" i
 - **API:** Vercel serverless functions in `api/`
 - **Database + live walking:** Supabase (free tier)
 
+## Current mode: just houses
+
+The live site is in **houses-only mode**. Every follower gets a house, and you can sign in, walk around, search, visit and knock on doors, and see other players live, with day and night. All the game code (resources, coins, quests, upgrades, farming, raids, friends, cars) is still in this project, switched off with one setting:
+
+- **Switch the game back on:** set `GAME = true` in [shared/features.js](shared/features.js).
+- **The full game exactly as it was** is also saved on the `full-game` branch.
+
 ## Run it on your computer
 
 ```bash

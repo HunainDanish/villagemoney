@@ -16,6 +16,7 @@ import { YARD_SLOTS, PLAZA } from '../shared/nodes.js';
 import { JOBS, COOKBOOK, SNACKS, ENERGY_MAX, defenceScore } from '../shared/life.js';
 import { energyNow } from '../shared/game.js';
 import { createLifeUI } from './life-ui.js';
+import { GAME } from '../shared/features.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat();
@@ -135,6 +136,7 @@ async function act(action) {
 
 function openHouse(h, onKnock) {
   const mine = me?.id === h.id || (me?.home_id && me.home_id === h.id);
+  if (!GAME) return openPlainHouse(h, mine, onKnock);
   if (mine) return openMyHouse();
   openSheet(h.label || (h.u ? `@${h.u}` : 'A neighbour'), (el) => {
     const job = h.j && JOBS[h.j] ? `${JOBS[h.j].icon} ${JOBS[h.j].name}` : '';
@@ -155,6 +157,20 @@ function openHouse(h, onKnock) {
       </div>`;
     el.querySelector('#h-knock')?.addEventListener('click', () => (closeSheet(), onKnock(h)));
     life.bindHouseActions(el, h, (house, then) => onKnock(house, then));
+  });
+}
+
+// Just houses: a simple card. Your own house, or a neighbour's with knock.
+function openPlainHouse(h, mine, onKnock) {
+  openSheet(mine ? 'Your home 🏠' : h.u ? `@${h.u}` : 'A neighbour', (el) => {
+    el.innerHTML = `
+      <p>House #${fmt.format(h.id)}${world.houses.get(h.id)?.lit ? ' · porch light is on tonight 🏮' : ''}</p>
+      ${mine ? '<p>This is your house. Your porch light shines at night on days you visit.</p>' : ''}
+      <div class="stack">
+        ${mine ? '' : '<button class="btn primary" id="h-knock">👋 Knock on the door</button>'}
+        ${h.u ? `<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/${encodeURIComponent(h.u)}/">Open on Instagram</a>` : ''}
+      </div>`;
+    el.querySelector('#h-knock')?.addEventListener('click', () => (closeSheet(), onKnock(h)));
   });
 }
 
@@ -518,7 +534,7 @@ $('plaza-btn').onclick = () => {
   closeSheet();
   player.teleport(0, 22, 0, 0);
   world.showMarker(null);
-  ui.toast('Welcome to the plaza: workbench, market, pond and quest board');
+  ui.toast(GAME ? 'Welcome to the plaza: workbench, market, pond and quest board' : 'Welcome to the plaza ⛲');
 };
 $('home-btn').onclick = goHome;
 $('friends-btn').onclick = () => life.openFriends();
@@ -540,7 +556,7 @@ $('drive-btn').onclick = () => {
 
 // Show the drive button once you own a car.
 function renderDrive() {
-  const has = Boolean(store.state.car);
+  const has = GAME && Boolean(store.state.car);
   $('drive-btn').hidden = !has;
   $('drive-btn').classList.toggle('primary', Boolean(player.vehicle));
 }
@@ -617,6 +633,12 @@ async function boot() {
   document.title = `${cfg.townName}: a home for every follower`;
   $('town-name').textContent = cfg.townName;
   $('demo-badge').hidden = !isDemo();
+  if (!GAME) {
+    // Just houses: hide everything that belongs to the game.
+    for (const id of ['coins', 'energy', 'bag-btn', 'quests-btn', 'friends-btn', 'drive-btn']) $(id).hidden = true;
+    $('hint').innerHTML = 'Walk around and visit your neighbours · WASD or tap to walk · drag to turn · <span id="online">0</span> nearby';
+    $('demo-badge').textContent = 'Demo mode · fake residents';
+  }
   $('key-btn').onclick = (e) => {
     e.preventDefault();
     if (isDemo()) return ui.toast('Sign-in is off in demo mode');
@@ -644,7 +666,7 @@ async function boot() {
     history.replaceState(null, '', '/');
   }
 
-  if (me && !me.demo) getJSON('/api/social/list').then((d) => setUnseen(d.unseen)).catch(() => {});
+  if (GAME && me && !me.demo) getJSON('/api/social/list').then((d) => setUnseen(d.unseen)).catch(() => {});
   setInterval(() => ($('energy').textContent = `⚡ ${energyNow(store.state, Date.now())}`), 30000);
   for (const e of res.events || []) if (e.type === 'received') ui.celebrate(`🎁 Gift from @${e.from}!`);
 

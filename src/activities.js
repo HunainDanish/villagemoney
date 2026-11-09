@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { NODE_KINDS, PLAZA } from '../shared/nodes.js';
 import { ITEMS, SKILLS, nodeReadyAt } from '../shared/game.js';
 import { sfx, floatText } from './fx.js';
+import { GAME } from '../shared/features.js';
 
 // Turns taps into activities: walk to a thing, then chop / mine / pick /
 // fish / knock / open a station. Animation and feedback happen here; the
@@ -44,6 +45,12 @@ export class Activities {
   // Entry point for any tap in the world.
   tap(hit) {
     if (this.current?.type === 'fish' && this.current.phase === 'bite') return this.#reel();
+    if (!GAME) {
+      // Just houses: trees and plaza stalls are scenery; walk over to them.
+      if (hit.node) return this.player.walkTo(hit.node.x, hit.node.z, 2.5);
+      if (hit.station) return this.player.walkTo(hit.at.x, hit.at.z, 5);
+      if (hit.bed) return this.ui.openHouse(hit.bed.house, (h, then) => this.knock(h, then));
+    }
     if (hit.node) return this.#goNode(hit.node);
     if (hit.station) return this.#goStation(hit.station, hit.at);
     if (hit.bed) return this.ui.openBed(hit.bed, (h, then) => this.knock(h, then));
