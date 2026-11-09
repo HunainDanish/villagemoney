@@ -17,6 +17,7 @@ import { JOBS, COOKBOOK, SNACKS, ENERGY_MAX, defenceScore, STAY, HOUSE_POINT_COS
 import { energyNow } from '../shared/game.js';
 import { createLifeUI } from './life-ui.js';
 import { GAME } from '../shared/features.js';
+import { PALETTES, PREMIUM, PREMIUM_TIER, PART_UNLOCK, PART_NAMES, STARTER_STYLES, lookFor, paletteFor } from '../shared/style.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat();
@@ -116,6 +117,7 @@ function drawLabels() {
 // ---------- sheets ----------
 let sheetRender = null;
 function openSheet(title, render) {
+  $('sheet').classList.remove('short');
   $('sheet-title').textContent = title;
   sheetRender = render;
   $('sheet').hidden = false;
@@ -172,6 +174,7 @@ function openPlainHouse(h, mine, onKnock) {
         ${h.u ? `<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/${encodeURIComponent(h.u)}/">Open on Instagram</a>` : ''}
       </div>`;
     el.querySelector('#h-knock')?.addEventListener('click', () => (closeSheet(), onKnock(h)));
+    el.querySelector('#customize-btn')?.addEventListener('click', openCustomize);
     el.querySelector('#pt-up')?.addEventListener('click', async () => {
       const r = await act({ a: 'pointUpgrade' });
       if (!r.ok) return;
@@ -183,6 +186,45 @@ function openPlainHouse(h, mine, onKnock) {
       ui.celebrate(`🏡 Upgraded to ${r.events.find((e) => e.type === 'upgrade')?.name}!`);
       openPlainHouse({ ...h, t: store.state.tier }, true, onKnock);
     });
+  });
+}
+
+// Customise your house: free; upgrades unlock more parts. Every change shows
+// on your house right away (it's visible just above this sheet).
+function openCustomize() {
+  if (!me) return;
+  openSheet('Customize my house', (el) => {
+    $('sheet').classList.add('short'); // keep your house visible above
+    const s = store.state;
+    const tier = s.tier || 1;
+    const look = lookFor(me.home_id || me.id, s.paint);
+    const tierName = (t) => HOUSE_TIERS[t - 1]?.name;
+    const section = (part) => {
+      const locked = tier < PART_UNLOCK[part];
+      const head = `<h3>${PART_NAMES[part]}${locked ? ` · 🔒 unlocks with ${tierName(PART_UNLOCK[part])}` : ''}</h3>`;
+      if (part === 'style') {
+        return head + `<div class="wrap">${STARTER_STYLES.map((n, i) => `<button class="btn ${look.style === i ? 'primary' : ''}" data-part="style" data-i="${i}" ${locked ? 'disabled' : ''}>${n}</button>`).join('')}</div>${tier > 1 ? '<p>Your style shows when your house is a starter home; upgraded houses have their own shape.</p>' : ''}`;
+      }
+      const base = PALETTES[part].length;
+      return head + `<div class="swatches">${paletteFor(part).map((c, i) => {
+        const premium = i >= base;
+        const off = locked || (premium && tier < PREMIUM_TIER);
+        return `<button class="swatch ${look[part] === i ? 'on' : ''} ${off ? 'locked' : ''}" style="background:${hex(c)}" data-part="${part}" data-i="${i}" ${off ? 'disabled' : ''} title="${premium ? 'Mansion colour' : ''}" aria-label="${PART_NAMES[part]} colour ${i + 1}">${premium ? '✨' : ''}</button>`;
+      }).join('')}</div>`;
+    };
+    el.innerHTML = `
+      <p>Free to change any time. Every house starts with its own unique look, and upgrading unlocks more to customise. ✨ colours unlock with the Mansion.</p>
+      ${['style', 'wall', 'roof', 'door', 'trim', 'shutter'].map(section).join('')}
+      <p>${tier < 4 ? 'Shutters appear on cottages, family homes, two-storey houses and manors.' : ''}</p>`;
+    el.querySelectorAll('[data-part]').forEach((b) =>
+      (b.onclick = async () => {
+        const r = await act({ a: 'customize', part: b.dataset.part, index: Number(b.dataset.i) });
+        if (r.ok) {
+          sfx.click();
+          syncOwnHouse();
+        }
+      }),
+    );
   });
 }
 
@@ -198,6 +240,7 @@ function upgradeByPointsHTML() {
   return `
     <p>This is your house. Spend <b>15 active minutes</b> in town each day to earn <b>1 house point</b>, then use points to upgrade.</p>
     <div class="row"><span class="ico">⏳</span><div class="grow"><b>Today: ${mins}/${STAY.minutesPerPoint} min${done ? ' ✓ point earned' : ''}</b><div class="bar"><i style="width:${(mins / STAY.minutesPerPoint) * 100}%"></i></div><small>${done ? 'Come back tomorrow for another point.' : 'Only counts while this tab is open and you are moving around.'}</small></div></div>
+    <div class="stack"><button class="btn primary" id="customize-btn">🎨 Customize my house</button></div>
     ${next ? `<div class="row"><span class="ico">⬆️</span><div class="grow"><b>Upgrade to ${next.name}</b><small>${next.blurb}</small><small>🏠 ${pts}/${nextCost} house points</small></div><button class="btn ${pts >= nextCost ? 'good' : ''}" id="pt-up" ${pts >= nextCost ? '' : 'disabled'}>Upgrade</button></div>` : '<p>🏆 Your house is fully upgraded: a mansion!</p>'}`;
 }
 

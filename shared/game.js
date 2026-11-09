@@ -10,6 +10,7 @@ import {
   ENERGY_MAX, ENERGY_REGEN_MS, ENERGY_COST, CROPS, GARDEN_PLOTS, GROCER, COOKBOOK, SNACKS,
   JOBS, LOCKS, GUARD_DOG, ALARM, RAID, CARS, STAY, HOUSE_POINT_COST,
 } from './life.js';
+import { customizeProblem } from './style.js';
 
 export const ITEMS = {
   log: { name: 'Log', icon: '🪵', sell: 2 },
@@ -548,6 +549,15 @@ export function applyAction(s, action, ctx) {
         s.points = (s.points || 0) + 1;
         events.push({ type: 'point', points: s.points });
       }
+      return { ok: true, events };
+    }
+
+    // Free customisation; upgrades unlock more parts (see shared/style.js).
+    case 'customize': {
+      const problem = customizeProblem(s.tier || 1, action.part, action.index);
+      if (problem) return fail(problem);
+      s.paint = { ...s.paint, [action.part]: action.index };
+      events.push({ type: 'decor' });
       return { ok: true, events };
     }
 

@@ -12,6 +12,7 @@ import * as Props from './props.js';
 import { CROPS, CARS } from '../shared/life.js';
 import { cropReadyAt } from '../shared/game.js';
 import { GAME } from '../shared/features.js';
+import { lookFor, colorOf } from '../shared/style.js';
 import { Sky } from './sky.js';
 import { loadBlock } from './api.js';
 
@@ -67,6 +68,7 @@ function roadTexture() {
   return t;
 }
 
+const HOUSE_PARTS = ['walls', 'roof', 'details', 'glass', 'trim', 'door', 'shutter'];
 const vc = (opts = {}) => new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
 
 export class World {
@@ -155,10 +157,14 @@ export class World {
         roof: this.#instanced(g.roof, vc({ flatShading: true }), CAPACITY, { cast: castWalls }),
         details: this.#instanced(g.details, vc(), CAPACITY),
         glass: this.#instanced(g.glass, new THREE.MeshBasicMaterial({ vertexColors: true }), CAPACITY),
+        // Paintable parts: every house tints these with its own colours.
+        trim: this.#instanced(g.trim, vc(), CAPACITY),
+        door: this.#instanced(g.door, vc(), CAPACITY),
+        shutter: this.#instanced(g.shutter, vc(), CAPACITY),
         list: [],
       };
-      st.walls.position.y = st.roof.position.y = st.details.position.y = st.glass.position.y = 0.3;
-      for (const k of ['walls', 'roof', 'glass']) st[k].setColorAt(0, new THREE.Color());
+      for (const k of HOUSE_PARTS) st[k].position.y = 0.3;
+      for (const k of ['walls', 'roof', 'glass', 'trim', 'door', 'shutter']) st[k].setColorAt(0, new THREE.Color());
       this.styles.push(st);
     }
     this.yards = this.#instanced(M.yardGeometry(), vc(), CAPACITY, { receive: true });
@@ -598,11 +604,13 @@ export class World {
       for (const h0 of houses || []) {
         const full = this.overrides.has(h0.id) ? { ...h0, ...this.overrides.get(h0.id) } : h0;
         // Houses-only mode still shows upgrades (earned with house points).
-        const h = GAME ? full : { id: full.id, u: full.u, lit: full.lit, t: full.t };
+        // Houses-only mode still shows upgrades and each house's own colours.
+        const h = GAME ? full : { id: full.id, u: full.u, lit: full.lit, t: full.t, p: full.p };
         if (h.mv) continue; // moved in with someone: this plot stands empty
         const p = housePosition(h.id);
         const seed = hash(h.id);
-        const model = modelFor(h.id, h.t || 1, seed);
+        const look = lookFor(h.id, h.p); // unique default + the resident's choices
+        const model = modelFor(h.id, h.t || 1, look.style);
         const st = this.styles[model];
         const meta = st.meta;
         const i = st.list.length;
@@ -612,11 +620,19 @@ export class World {
         st.roof.setMatrixAt(i, m);
         st.details.setMatrixAt(i, m);
         st.glass.setMatrixAt(i, m);
+        st.trim.setMatrixAt(i, m);
+        st.door.setMatrixAt(i, m);
+        st.shutter.setMatrixAt(i, m);
+        st.trim.setColorAt(i, c.setHex(colorOf('trim', look.trim)));
+        st.door.setColorAt(i, c.setHex(colorOf('door', look.door)));
+        st.shutter.setColorAt(i, c.setHex(colorOf('shutter', look.shutter)));
         this.yards.setMatrixAt(this.drawnAll.length, m);
         const wall = h.p?.wall ?? null;
         const roof = h.p?.roof ?? null;
-        st.walls.setColorAt(i, c.setHex(wall !== null ? WALL_PAINTS[wall] ?? WALL_PAINTS[0] : DEFAULT_WALLS[(seed >>> 4) % DEFAULT_WALLS.length]));
-        st.roof.setColorAt(i, c.setHex(roof !== null ? ROOF_PAINTS[roof] ?? ROOF_PAINTS[0] : DEFAULT_ROOFS[(seed >>> 8) % DEFAULT_ROOFS.length]));
+        st.walls.setColorAt(i, c.setHex(colorOf('wall', look.wall)));
+        st.roof.setColorAt(i, c.setHex(colorOf('roof', look.roof)));
+        void wall;
+        void roof;
         // Porch light beside the door.
         const pl = toWorld(p, meta.porch[0], meta.porch[2]);
         m.makeTranslation(pl.x, meta.porch[1] + 0.3, pl.z);
@@ -675,7 +691,7 @@ export class World {
       }
     }
     for (const st of this.styles) {
-      for (const k of ['walls', 'roof', 'details', 'glass']) {
+      for (const k of HOUSE_PARTS) {
         st[k].count = st.list.length;
         st[k].instanceMatrix.needsUpdate = true;
         if (st[k].instanceColor) st[k].instanceColor.needsUpdate = true;
@@ -917,7 +933,8 @@ export class World {
     if (h && (!GAME || !h.mv)) {
       // Footprint of this house's model, in the house's own frame.
       const tier = this.overrides.get(id)?.t ?? h.t ?? 1;
-      const meta = this.models[modelFor(id, tier, hash(id))].meta;
+      const paint = this.overrides.get(id)?.p ?? h.p;
+      const meta = this.models[modelFor(id, tier, lookFor(id, paint).style)].meta;
       const p = housePosition(id);
       const dx = x - p.x;
       const dz = z - p.z;
