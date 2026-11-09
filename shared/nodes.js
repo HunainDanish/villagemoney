@@ -100,4 +100,6 @@ export const PLAZA = {
   workbench: { x: 30, z: -30 },
   stall: { x: 32, z: 26 },
   board: { x: -30, z: -30 },
+  grocer: { x: 0, z: -38 },
+  showroom: { x: 0, z: 40, hw: 7, hd: 4.5 }, // a building: half width / depth
 };

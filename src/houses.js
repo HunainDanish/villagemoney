@@ -373,13 +373,64 @@ function manor() {
   return out;
 }
 
-const BUILDERS = [cottage, cabin, bungalow, familyHome, twoStorey, manor];
+// Tier 5: three floors, two corner towers with cone roofs, a columned portico
+// with a pediment, grand double door. The biggest house in town.
+function mansion() {
+  const out = { walls: [], roof: [], details: [], glass: [], meta: {} };
+  const top = body(out, 8.0, 10.6, 7.0);
+  for (const y of [4.1, 7.6]) out.details.push(paint(box(8.15, 0.24, 7.15, 0, y, 0), COL.trim)); // floor bands
+  const r = hipRoof(8.0, 7.0, 3.4, top);
+  out.roof.push(...r.roof);
+  out.details.push(...r.trim.map((g) => paint(g, COL.trim)));
+  // Corner towers.
+  const th = 12.4;
+  for (const x of [-4.6, 4.6]) {
+    out.walls.push(paint(new THREE.CylinderGeometry(1.3, 1.3, th, 14).translate(x, 0.5 + th / 2, 2.6), 0xffffff, true));
+    out.details.push(paint(new THREE.CylinderGeometry(1.45, 1.45, 0.5, 14).translate(x, 0.25, 2.6), COL.stoneDark, true));
+    out.details.push(paint(new THREE.CylinderGeometry(1.42, 1.42, 0.22, 14).translate(x, 0.5 + th, 2.6), COL.trim));
+    out.roof.push(new THREE.ConeGeometry(1.75, 3.2, 14).translate(x, 0.5 + th + 1.6, 2.6));
+    for (const y of [2.8, 6.3, 9.8]) {
+      out.details.push(paint(box(0.9, 1.3, 0.16, x, y, 3.88), COL.trim));
+      out.glass.push(paint(box(0.62, 1.0, 0.06, x, y, 3.92)));
+    }
+  }
+  // Portico: four columns, entablature and pediment.
+  for (const x of [-2.4, -0.8, 0.8, 2.4]) out.details.push(paint(new THREE.CylinderGeometry(0.24, 0.28, 4.4, 12).translate(x, 2.7, 5.2), COL.trim));
+  out.details.push(paint(box(5.6, 0.45, 2.3, 0, 5.1, 4.45), COL.trim));
+  out.details.push(paint(gableWall(5.8, 1.4, 0.4).translate(0, 5.32, 5.5), COL.trim));
+  out.details.push(paint(box(5.6, 0.3, 2.4, 0, 0.15, 4.6), COL.stone, true)); // portico floor
+  door(out, { x: -0.6, z: 3.52, color: 0x2f3a56, w: 1.1, h: 3.8 });
+  door(out, { x: 0.6, z: 3.52, color: 0x2f3a56, w: 1.1, h: 3.8 });
+  steps(out, { x: 0, z: 5.6, w: 4.4 });
+  path(out, 0, 6.6);
+  for (const y of [2.8, 6.0, 9.3]) {
+    for (const x of [-2.6, 2.6]) windowOn(out, { x, y, z: 3.52, w: 1.1, h: 1.5, shutters: false });
+  }
+  windowOn(out, { x: 0, y: 6.3, z: 3.52, w: 1.4, h: 1.8, shutters: false });
+  windowOn(out, { x: 0, y: 9.3, z: 3.52, w: 1.2, h: 1.4, shutters: false });
+  for (const y of [2.8, 6.0, 9.3]) {
+    windowOn(out, { x: 4.02, y, z: -1.4, face: 'x' });
+    windowOn(out, { x: -4.02, y, z: -1.4, face: 'x' });
+  }
+  chimney(out, -2.6, -2.2, top + 3.4);
+  chimney(out, 2.6, -2.2, top + 3.4);
+  lampBracket(out, -2.2, 3.4, 3.52);
+  shrubs(out, [[-3.2, 5.4, 0.6], [3.2, 5.4, 0.6]]);
+  Object.assign(out.meta, {
+    porch: [-2.2, 3.55, 3.88], height: top + 6, hx: 5.9, hz: 3.7, cz: 0.2,
+    slots: [[-5.2, 6.8], [5.2, 6.8], [-6.9, 1.0], [6.9, 1.0], [-6.9, -2.6], [6.9, -2.6]],
+  });
+  return out;
+}
+
+const BUILDERS = [cottage, cabin, bungalow, familyHome, twoStorey, manor, mansion];
 export const MODEL_COUNT = BUILDERS.length;
 
 // Tier 1 houses vary between three small homes; upgrades replace them.
 export function modelFor(id, tier = 1, hash) {
   tier = Number(tier) | 0;
-  if (tier >= 4) return 5;
+  if (tier >= 5) return 6;
+  if (tier === 4) return 5;
   if (tier === 3) return 4;
   if (tier === 2) return 3;
   return hash % 3;

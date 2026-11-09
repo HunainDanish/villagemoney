@@ -8,6 +8,9 @@ import { plotNodes, plazaNodes, NODE_KINDS, YARD_SLOTS, toWorld, PLAZA } from '.
 import { WALL_PAINTS, ROOF_PAINTS } from '../shared/game.js';
 import * as M from './models.js';
 import { houseModels, modelFor } from './houses.js';
+import * as Props from './props.js';
+import { CROPS, CARS } from '../shared/life.js';
+import { cropReadyAt } from '../shared/game.js';
 import { Sky } from './sky.js';
 import { loadBlock } from './api.js';
 
@@ -176,6 +179,28 @@ export class World {
       gnome: this.#instanced(gnomeGeometry(), vc(), CAPACITY, { cast: true }),
     };
     for (const m of Object.values(this.decorMeshes)) m.position.y = 0.3;
+
+    // Town-life props: garden beds and crops, kennels, alarm bells, raid
+    // flags and parked cars. One instanced mesh each.
+    const BEDS = CAPACITY * Props.BED_SPOTS.length;
+    this.beds = this.#instanced(Props.bedGeometry(), vc(), BEDS, { receive: true });
+    this.plants = this.#instanced(Props.plantGeometry(), vc({ flatShading: true }), BEDS);
+    this.fruits = this.#instanced(Props.fruitGeometry(), vc(), BEDS);
+    this.fruits.setColorAt(0, new THREE.Color());
+    this.kennels = this.#instanced(Props.kennelGeometry(), vc({ flatShading: true }), CAPACITY, { cast: true });
+    this.bells = this.#instanced(Props.bellGeometry(), vc(), CAPACITY);
+    this.flags = this.#instanced(Props.flagGeometry(), vc({ side: THREE.DoubleSide }), CAPACITY);
+    this.flags.setColorAt(0, new THREE.Color());
+    this.parked = {};
+    for (const model of Object.keys(CARS)) {
+      const mesh = this.#instanced(Props.carGeometry(model), vc(), CAPACITY, { cast: true });
+      mesh.setColorAt(0, new THREE.Color());
+      this.parked[model] = mesh;
+    }
+    for (const m of [this.beds, this.plants, this.fruits, this.kennels, this.bells, this.flags, ...Object.values(this.parked)]) m.position.y = 0.3;
+    this.hiddenCar = null; // your own parked car is hidden while you drive it
+    // Crops grow in real time: redraw garden stages every 20 s.
+    setInterval(() => (this.dirtyHouses = true), 20000);
   }
 
   // ---------- resource nodes ----------
@@ -334,6 +359,67 @@ export class World {
       b.castShadow = true;
       g.add(b);
     }
+    // Grocer: a market stall with crates of vegetables (seeds, milk, eggs, cheese).
+    const G = PLAZA.grocer;
+    const grocer = new THREE.Group();
+    grocer.position.set(G.x, 0, G.z);
+    const gc = new THREE.Mesh(new THREE.BoxGeometry(6, 1.6, 2.2), new THREE.MeshLambertMaterial({ color: 0x8fbf6a }));
+    gc.position.y = 0.8;
+    gc.castShadow = true;
+    grocer.add(gc);
+    for (const x of [-2.8, 2.8]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.4, 0.3), new THREE.MeshLambertMaterial({ color: 0x7a5233 }));
+      post.position.set(x, 2.2, 0.9);
+      grocer.add(post);
+    }
+    for (let i = 0; i < 6; i++) {
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.15, 3), new THREE.MeshLambertMaterial({ color: i % 2 ? 0xffffff : 0x3f9a5a }));
+      stripe.position.set(-2.75 + i * 1.1, 4.5, 0);
+      stripe.rotation.x = -0.25;
+      stripe.castShadow = true;
+      grocer.add(stripe);
+    }
+    [[0xf08a24, -1.8], [0xe03b2f, 0], [0xe6c35c, 1.8]].forEach(([col, x]) => {
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 1.2), new THREE.MeshLambertMaterial({ color: 0xa8774a }));
+      crate.position.set(x, 1.85, 0);
+      const veg = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 0).scale(1.2, 0.5, 1), new THREE.MeshLambertMaterial({ color: col, flatShading: true }));
+      veg.position.set(x, 2.2, 0);
+      grocer.add(crate, veg);
+    });
+    g.add(grocer);
+
+    // Car showroom: glass-fronted building with cars on display.
+    const S2 = PLAZA.showroom;
+    const show = new THREE.Group();
+    show.position.set(S2.x, 0, S2.z);
+    const floor2 = new THREE.Mesh(new THREE.BoxGeometry(S2.hw * 2, 0.3, S2.hd * 2), new THREE.MeshLambertMaterial({ color: 0xe9e4da }));
+    floor2.position.y = 0.15;
+    floor2.receiveShadow = true;
+    const back = new THREE.Mesh(new THREE.BoxGeometry(S2.hw * 2, 5, 0.4), new THREE.MeshLambertMaterial({ color: 0xf2efe8 }));
+    back.position.set(0, 2.5, S2.hd - 0.2);
+    const roof2 = new THREE.Mesh(new THREE.BoxGeometry(S2.hw * 2 + 0.8, 0.5, S2.hd * 2 + 0.8), new THREE.MeshLambertMaterial({ color: 0x3a3f4a }));
+    roof2.position.y = 5.25;
+    roof2.castShadow = true;
+    const glassMat = new THREE.MeshLambertMaterial({ color: 0x9fd6ff, transparent: true, opacity: 0.35 });
+    const front = new THREE.Mesh(new THREE.BoxGeometry(S2.hw * 2, 4.6, 0.1), glassMat);
+    front.position.set(0, 2.6, -S2.hd + 0.1);
+    for (const x of [-S2.hw + 0.2, 0, S2.hw - 0.2]) {
+      const col = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5, 0.3), new THREE.MeshLambertMaterial({ color: 0x3a3f4a }));
+      col.position.set(x, 2.5, -S2.hd + 0.15);
+      show.add(col);
+    }
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(6, 1, 0.3), new THREE.MeshBasicMaterial({ color: 0xe85d24 }));
+    sign.position.set(0, 6.1, -S2.hd + 0.3);
+    show.add(floor2, back, roof2, front, sign);
+    ['hatch', 'sports', 'pickup'].forEach((model, i) => {
+      const car = new THREE.Mesh(Props.carGeometry(model), new THREE.MeshLambertMaterial({ vertexColors: true, color: CARS[model].color }));
+      car.position.set(-4 + i * 4, 0.3, 0.5);
+      car.rotation.y = Math.PI + (i - 1) * 0.35;
+      car.castShadow = true;
+      show.add(car);
+    });
+    g.add(show);
+
     this.plaza = g;
     this.scene.add(g);
 
@@ -461,6 +547,15 @@ export class World {
     };
 
     this.porchPos = [];
+    this.bedRecs = [];
+    const now = Date.now();
+    let beds = 0;
+    let plants = 0;
+    let fruits = 0;
+    let kennels = 0;
+    let bells = 0;
+    let flags = 0;
+    const parkedCount = Object.fromEntries(Object.keys(this.parked).map((k) => [k, 0]));
     // Plaza lot is always present.
     const plazaBlocks = [[0, 0, true]];
     const blocks = [...plazaBlocks, ...[...this.blocks.keys()].map((b) => [...blockGrid(b), false, b])];
@@ -501,6 +596,7 @@ export class World {
     for (const houses of this.blocks.values()) {
       for (const h0 of houses || []) {
         const h = this.overrides.has(h0.id) ? { ...h0, ...this.overrides.get(h0.id) } : h0;
+        if (h.mv) continue; // moved in with someone: this plot stands empty
         const p = housePosition(h.id);
         const seed = hash(h.id);
         const model = modelFor(h.id, h.t || 1, seed);
@@ -533,7 +629,44 @@ export class World {
           m.compose(new THREE.Vector3(w.x, 0, w.z), q, one);
           mesh.setMatrixAt(decorCount[item]++, m);
         });
+        const at = (lx, lz) => {
+          const w = toWorld(p, lx, lz);
+          q.setFromAxisAngle(up, p.facing);
+          return m.compose(new THREE.Vector3(w.x, 0, w.z), q, one);
+        };
         const rec = { ...h, x: p.x, z: p.z, facing: p.facing, style: model, height: meta.height + 1.5, windows: Boolean(h.lit) || hash(h.id + 99) % 10 < 7 };
+        const names = [h.u, ...(h.m || [])].filter(Boolean).map((u) => `@${u}`);
+        rec.label = names.length ? names.join(' & ') : 'A neighbour';
+        // Garden beds and crops (growth stage from planting time).
+        Props.BED_SPOTS.forEach(([lx, lz], plot) => {
+          this.beds.setMatrixAt(beds, at(lx, lz));
+          this.bedRecs[beds++] = { house: rec, plot };
+          const g = h.g?.[plot];
+          if (!g || !CROPS[g.c]) return;
+          const ready = cropReadyAt({ garden: h.g, job: h.j }, plot);
+          const k = Math.max(0, Math.min(1, (now - g.at) / Math.max(1, ready - g.at)));
+          const base = at(lx, lz).clone();
+          const size = 0.35 + 0.75 * k;
+          this.plants.setMatrixAt(plants++, base.clone().multiply(new THREE.Matrix4().makeScale(size, size, size)));
+          if (k >= 1) {
+            const big = g.c === 'pumpkin' ? 2.2 : 1;
+            this.fruits.setMatrixAt(fruits, base.clone().multiply(new THREE.Matrix4().makeScale(big, big, big)));
+            this.fruits.setColorAt(fruits++, c.setHex(CROPS[g.c].color));
+          }
+        });
+        if (h.df?.dog) this.kennels.setMatrixAt(kennels++, at(...Props.KENNEL_SPOT));
+        if (h.df?.alarm) this.bells.setMatrixAt(bells++, at(...Props.BELL_SPOT));
+        if (h.r) {
+          this.flags.setMatrixAt(flags, at(...Props.FLAG_SPOT));
+          this.flags.setColorAt(flags++, c.setHex((h.sh || 0) > now ? 0x3d7cf5 : 0xd94141));
+        }
+        if (h.c && this.parked[h.c] && this.hiddenCar !== h.id) {
+          const w = toWorld(p, ...Props.CAR_SPOT);
+          q.setFromAxisAngle(up, p.facing + Math.PI / 2);
+          const pm = this.parked[h.c];
+          pm.setMatrixAt(parkedCount[h.c], m.compose(new THREE.Vector3(w.x, 0, w.z), q, one));
+          pm.setColorAt(parkedCount[h.c]++, c.setHex(CARS[h.c].color));
+        }
         st.list.push(rec);
         this.drawnAll.push(rec);
       }
@@ -547,6 +680,13 @@ export class World {
     }
     this.yards.count = this.drawnAll.length;
     this.porch.count = this.porchGlow.count = porch;
+    const lifeCounts = [[this.beds, beds], [this.plants, plants], [this.fruits, fruits], [this.kennels, kennels], [this.bells, bells], [this.flags, flags]];
+    for (const [model, mesh] of Object.entries(this.parked)) lifeCounts.push([mesh, parkedCount[model]]);
+    for (const [mesh, n] of lifeCounts) {
+      mesh.count = n;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
     for (const [k, mesh] of Object.entries(this.decorMeshes)) {
       mesh.count = decorCount[k];
       mesh.instanceMatrix.needsUpdate = true;
@@ -757,7 +897,9 @@ export class World {
       if (Math.hypot(x, z) < 10.4) return true;
       const P = PLAZA.pond;
       if (Math.hypot(x - P.x, z - P.z) < P.r + 0.5) return true;
-      for (const s of [PLAZA.workbench, PLAZA.stall, PLAZA.board]) if (Math.abs(x - s.x) < 3 && Math.abs(z - s.z) < 3) return true;
+      for (const s of [PLAZA.workbench, PLAZA.stall, PLAZA.board, PLAZA.grocer]) if (Math.abs(x - s.x) < 3 && Math.abs(z - s.z) < 3) return true;
+      const S = PLAZA.showroom;
+      if (Math.abs(x - S.x) < S.hw && Math.abs(z - S.z) < S.hd) return true;
       return this.#nodeBlocks(plazaNodes(), x, z);
     }
     const lx = x - gx * PITCH;
@@ -769,7 +911,7 @@ export class World {
     if (sx < 0 || sz < 0 || sx >= BLOCK_SIDE || sz >= BLOCK_SIDE) return false;
     const id = b * HOUSES_PER_BLOCK + sz * BLOCK_SIDE + sx + 1;
     const h = this.houses.get(id) || (this.overrides.has(id) ? { id } : null);
-    if (h) {
+    if (h && !h.mv) {
       // Footprint of this house's model, in the house's own frame.
       const tier = this.overrides.get(id)?.t ?? h.t ?? 1;
       const meta = this.models[modelFor(id, tier, hash(id))].meta;
@@ -808,6 +950,7 @@ export class World {
       if (mesh.count) targets.push(mesh);
     }
     for (const st of this.styles) targets.push(st.walls, st.roof);
+    targets.push(this.beds, this.plants, this.fruits);
     targets.push(this.plaza);
     const hits = this.raycaster.intersectObjects(targets, true);
     for (const hit of hits) {
@@ -818,10 +961,27 @@ export class World {
       for (const st of this.styles) {
         if ((obj === st.walls || obj === st.roof) && hit.instanceId !== undefined) return { house: st.list[hit.instanceId] };
       }
+      if (obj === this.beds && hit.instanceId !== undefined) return { bed: this.bedRecs[hit.instanceId] };
+      if ((obj === this.plants || obj === this.fruits) && hit.instanceId !== undefined) {
+        // Plants/fruit are drawn on beds: find the bed under the hit point.
+        let best = null;
+        let bestD = 4;
+        for (let i = 0; i < this.beds.count; i++) {
+          const mm = new THREE.Matrix4();
+          this.beds.getMatrixAt(i, mm);
+          const pos = new THREE.Vector3().setFromMatrixPosition(mm);
+          const d = (pos.x - hit.point.x) ** 2 + (pos.z - hit.point.z) ** 2;
+          if (d < bestD) {
+            bestD = d;
+            best = this.bedRecs[i];
+          }
+        }
+        if (best) return { bed: best };
+      }
       // Plaza stations by proximity of the hit point.
       const p = hit.point;
       for (const [name, s] of Object.entries(PLAZA)) {
-        const r = name === 'pond' ? s.r + 1 : 4.5;
+        const r = name === 'pond' ? s.r + 1 : name === 'showroom' ? s.hw + 1 : 4.5;
         if (Math.hypot(p.x - s.x, p.z - s.z) < r) return { station: name, at: s };
       }
       break;
