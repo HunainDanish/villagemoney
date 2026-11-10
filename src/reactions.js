@@ -5,6 +5,9 @@ import * as THREE from 'three';
 // shared live with players nearby (one tiny message each).
 export const REACTIONS = [
   { k: 'wave', icon: '👋', anim: 'wave' },
+  { k: 'dance', icon: '🕺', anim: 'dance' },
+  { k: 'clap', icon: '👏', anim: 'clap' },
+  { k: 'jump', icon: '🥳', anim: 'jump' },
   { k: 'hi', text: 'hi!' },
   { k: 'heart', icon: '❤️' },
   { k: 'laugh', icon: '😂' },
@@ -13,6 +16,10 @@ export const REACTIONS = [
   { k: 'nice', text: 'nice house!' },
   { k: 'follow', text: 'follow me!' },
   { k: 'bye', text: 'bye 👋' },
+  { k: 'cheers', icon: '🥂', hidden: true },
+  // Dice rolls (from the playground table) and café orders.
+  ...[1, 2, 3, 4, 5, 6].map((n) => ({ k: `d${n}`, text: `🎲 ${n}`, hidden: true })),
+  ...['🍝', '🍣', '🍔', '🍰', '🍹', '🧃', '☕'].map((icon, i) => ({ k: `f${i}`, icon, hidden: true })),
 ];
 export const reactionByKey = Object.fromEntries(REACTIONS.map((r) => [r.k, r]));
 

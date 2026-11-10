@@ -10,6 +10,10 @@ A small 3D town in the browser where every follower gets a house. "Porchlight" i
 
 The live site is in **houses-only mode**. Every follower gets a house, and you can sign in, walk around, search, visit and knock on doors, and see other players live, with day and night. All the game code (resources, coins, quests, upgrades, farming, raids, friends, cars) is still in this project, switched off with one setting:
 
+**House points:** spending 15 active minutes in town in a day (tab open, moving or tapping recently) earns 1 house point, at most one a day. Points upgrade your house: 2 → Family home, 5 → Two-storey, 10 → Manor, 20 → Mansion. The server checks the minute timing, so it can't be faked. The numbers are in `STAY` and `HOUSE_POINT_COST` in [shared/life.js](shared/life.js).
+
+**Unique, customisable houses:** every house gets its own default look, made from a combination of starter style plus wall, roof, door, trim and shutter colours, with over 1.3 million combinations. They are assigned so the first 1.3 million houses never repeat. Customising is free from your house card (🎨). Upgrades unlock more: starter (style, walls, roof) → Family home (door) → Two-storey (trim) → Manor (shutters) → Mansion (✨ gold and royal colours). Palettes are in [shared/style.js](shared/style.js).
+
 **Getting around:**
 - **Phones:** an on-screen joystick (bottom left) and a 🏃 Run button.
 - **🎥 View:** switches between street level (low, behind you) and the view from above.

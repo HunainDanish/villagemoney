@@ -141,7 +141,9 @@ function door(out, { x, z, color = COL.door, h = 3.4, w = 1.5 }) {
   const { details } = out;
   const b = 0.5;
   details.push(paint(box(w + 0.4, h + 0.25, 0.14, x, b + h / 2 + 0.05, z), COL.trim)); // frame
-  details.push(paint(box(w, h, 0.18, x, b + h / 2, z + 0.03), color));
+  // The door slab is its own paintable part (front-door colour per house).
+  (out.door ||= []).push(paint(box(w, h, 0.18, x, b + h / 2, z + 0.03)));
+  void color;
   details.push(paint(box(w * 0.6, h * 0.3, 0.05, x, b + h * 0.68, z + 0.13), 0xf6e2b0)); // glass light
   details.push(paint(box(0.16, 0.16, 0.12, x + w * 0.33, b + h * 0.45, z + 0.16), 0xe0b84a)); // knob
 }
@@ -456,14 +458,36 @@ function roofShade(g) {
 }
 
 let cache = null;
+// Pull trim (frames, corner boards, columns...) and shutters out of the fixed
+// details into their own white-baked parts, so each house can tint them.
+function splitPaintable(details) {
+  const fixed = [];
+  const trim = [];
+  const shutter = [];
+  const trimHex = new THREE.Color(COL.trim).getHex();
+  const shutterHex = new THREE.Color(COL.shutter).getHex();
+  for (const g of details) {
+    const c = g.attributes.color;
+    const hex = new THREE.Color(c.getX(0), c.getY(0), c.getZ(0)).getHex();
+    if (hex === trimHex) trim.push(paint(g));
+    else if (hex === shutterHex) shutter.push(paint(g));
+    else fixed.push(g);
+  }
+  return { fixed, trim, shutter };
+}
+
 export function houseModels() {
   if (cache) return cache;
   cache = BUILDERS.map((build) => {
     const out = build();
+    const { fixed, trim, shutter } = splitPaintable(out.details);
     return {
       walls: merge(out.walls),
       roof: merge(out.roof.map((g) => roofShade(paint(g)))),
-      details: merge(out.details),
+      details: merge(fixed),
+      trim: merge(trim),
+      door: merge(out.door || []),
+      shutter: merge(shutter),
       glass: merge(out.glass),
       meta: out.meta,
     };

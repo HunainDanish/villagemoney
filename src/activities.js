@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { NODE_KINDS, PLAZA } from '../shared/nodes.js';
+import { NODE_KINDS, PLAZA, VENUES } from '../shared/nodes.js';
 import { ITEMS, SKILLS, nodeReadyAt } from '../shared/game.js';
 import { sfx, floatText } from './fx.js';
 import { GAME } from '../shared/features.js';
@@ -45,10 +45,15 @@ export class Activities {
   // Entry point for any tap in the world.
   tap(hit) {
     if (this.current?.type === 'fish' && this.current.phase === 'bite') return this.#reel();
+    // Plaza venues (houses-only mode): seats, the dice table, the Ferris wheel.
+    if (hit.seat) return this.ui.sit?.(hit.seat);
+    if (hit.dice) return this.player.walkTo(VENUES.playground.x + 3, VENUES.playground.z + 2, 1.2, () => this.ui.dice?.());
+    if (hit.ride) return this.ui.ride?.();
     if (!GAME) {
       // Just houses: trees and plaza stalls are scenery; walk over to them.
       if (hit.node) return this.player.walkTo(hit.node.x, hit.node.z, 2.5);
-      if (hit.station) return this.player.walkTo(hit.at.x, hit.at.z, 5);
+      // Plaza places in houses-only mode (see LITE_PLAZA): walk over, then open.
+      if (hit.station) return this.#goStation(hit.station, hit.at);
       if (hit.bed) return this.ui.openHouse(hit.bed.house, (h, then) => this.knock(h, then));
     }
     if (hit.node) return this.#goNode(hit.node);
@@ -153,6 +158,7 @@ export class Activities {
     if (name === 'pond') return this.#goFish();
     this.player.walkTo(at.x, at.z, STATION_RANGE, () => {
       sfx.click();
+      if (!GAME) return this.ui.openPlace?.(name);
       if (name === 'workbench') this.ui.openCraft();
       else if (name === 'stall') this.ui.openShop();
       else if (name === 'board') this.ui.openQuests();

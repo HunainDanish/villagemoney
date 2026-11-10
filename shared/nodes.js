@@ -103,3 +103,12 @@ export const PLAZA = {
   grocer: { x: 0, z: -38 },
   showroom: { x: 0, z: 40, hw: 7, hd: 4.5 }, // a building: half width / depth
 };
+
+// Houses-only mode: the four game stalls make way for places to hang out.
+// Footprints are clear of the plaza trees, rocks and the GPS walkways.
+export const VENUES = {
+  cafe: { x: -28, z: -28, hw: 6, hd: 5 },
+  hall: { x: 28, z: -28, hw: 6, hd: 5 },
+  wheel: { x: 33, z: 27, r: 3.4 }, // base footprint; the wheel stands 18 high
+  playground: { x: 0, z: -38, hw: 5, hd: 2.5 },
+};

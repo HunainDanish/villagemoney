@@ -7,8 +7,10 @@ export async function GET() {
   if (!hasDb()) return errorJson('Database is not configured', 503);
   const [{ count, error: e1 }, { data, error: e2 }] = await Promise.all([
     db().from('residents').select('id', { count: 'estimated', head: true }),
-    db().from('residents').select('id').order('id', { ascending: false }).limit(1),
+    // Newest residents (for "New neighbours"); hidden names are skipped.
+    db().from('residents').select('id, username, hidden').order('id', { ascending: false }).limit(12),
   ]);
   if (e1 || e2) return errorJson('Could not load stats', 500);
-  return json({ residents: count ?? 0, maxId: data?.[0]?.id ?? 0 }, { cache: cdn(30) });
+  const latest = (data || []).filter((r) => !r.hidden).slice(0, 8).map((r) => ({ id: r.id, u: r.username }));
+  return json({ residents: count ?? 0, maxId: data?.[0]?.id ?? 0, latest }, { cache: cdn(30) });
 }

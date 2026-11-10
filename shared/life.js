@@ -89,3 +89,24 @@ export const CARS = {
   van: { name: 'Camper van', price: 2400, speed: 28, color: 0xf2c94c },
   sports: { name: 'Sports car', price: 5000, speed: 42, color: 0xe85d24 },
 };
+
+// ---------- daily stay -> house points (houses-only mode) ----------
+// Every active minute in town counts (the browser sends one "tick" a minute
+// while the tab is open and you've moved or tapped recently). 15 minutes in
+// a day earns 1 house point; points pay for house upgrades.
+export const STAY = { minutesPerPoint: 15, pointsPerDay: 1, tickMs: 60e3 };
+// Points needed to reach each tier (index = tier).
+export const HOUSE_POINT_COST = [null, null, 2, 5, 10, 20];
+
+// Houses-only mode: no coins, so cars unlock with your house level.
+export const CAR_TIER = { hatch: 1, pickup: 2, van: 3, sports: 4 };
+
+// Town goals: shown as "N more until …", and each one switches something on
+// for everyone when the town reaches it.
+export const TOWN_GOALS = [
+  { at: 100, name: '🎆 nightly fireworks' },
+  { at: 500, name: '✨ the golden fountain' },
+  { at: 1000, name: '🎡 the night lights on the Ferris wheel' },
+];
+export const nextGoal = (residents) => TOWN_GOALS.find((g) => residents < g.at) || null;
+export const reached = (residents, at) => residents >= at;

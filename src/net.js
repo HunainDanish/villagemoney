@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { Character } from './character.js';
 import { carGeometry } from './props.js';
 import { CARS } from '../shared/life.js';
+import { encodeAvatar, decodeAvatar } from '../shared/look.js';
+import { reactionByKey } from './reactions.js';
 import { PITCH } from '../shared/layout.js';
 
 // Live "who is walking near me" using Supabase Realtime.
@@ -34,6 +36,8 @@ export class Net {
     this.status = 'off'; // off | connecting | live | error
     this.onCount = () => {};
     this.onReact = () => {}; // (character group, reaction key)
+    this.online = 0; // everyone in town right now (lobby presence)
+    this.regionCounts = {}; // region -> people there
   }
 
   async connect(url, anonKey) {
@@ -42,6 +46,55 @@ export class Net {
     this.client = createClient(url, anonKey, { auth: { persistSession: false } });
     this.status = 'connecting';
     return true;
+  }
+
+  // Town-wide presence ("N online · Join"): one small update when you join,
+  // leave or move to another area; no positions are sent here.
+  joinLobby() {
+    if (!this.client || this.lobby) return;
+    const ch = this.client.channel('town:lobby', { config: { presence: { key: this.id } } });
+    ch.on('presence', { event: 'sync' }, () => {
+      const state = ch.presenceState();
+      this.online = Object.keys(state).length;
+      const counts = {};
+      for (const [id, metas] of Object.entries(state)) {
+        if (id === this.id) continue;
+        const r = metas[0]?.r;
+        if (typeof r === 'string') counts[r] = (counts[r] || 0) + 1;
+      }
+      this.regionCounts = counts;
+    });
+    ch.subscribe((status) => status === 'SUBSCRIBED' && this.#trackLobby());
+    this.lobby = ch;
+  }
+
+  #trackLobby() {
+    if (!this.lobby || this.lobby.state !== 'joined') return;
+    if (this.hidden) return void this.lobby.untrack();
+    this.lobby.track({ r: this.regionOverride ? 'inside' : this.region });
+  }
+
+  refreshLobby() {
+    this.#trackLobby();
+  }
+
+  // The busiest area other than yours (for "Join"), or null.
+  busiestRegion() {
+    let best = null;
+    let n = 0;
+    for (const [r, c] of Object.entries(this.regionCounts)) {
+      if (r !== this.region && r !== 'inside' && c > n) {
+        best = r;
+        n = c;
+      }
+    }
+    return best ? { region: best, people: n, center: this.regionCenter(best) } : null;
+  }
+
+  regionCenter(r) {
+    const [rx, rz] = r.split(':').map(Number);
+    const s = REGION * PITCH;
+    return { x: rx * s, z: rz * s };
   }
 
   // Demo mode: a few wandering bots so the town doesn't feel empty.
@@ -58,12 +111,13 @@ export class Net {
   }
 
   #regionOf(x, z) {
+    if (this.regionOverride) return this.regionOverride; // e.g. inside a house
     const s = REGION * PITCH;
     return `${Math.floor(x / s + 0.5)}:${Math.floor(z / s + 0.5)}`;
   }
 
   #me(player) {
-    return { i: this.id, n: this.name, x: +player.pos.x.toFixed(1), z: +player.pos.z.toFixed(1), h: +player.heading.toFixed(2), v: player.vehicle || null };
+    return { i: this.id, n: this.name, x: +player.pos.x.toFixed(1), z: +player.pos.z.toFixed(1), h: +player.heading.toFixed(2), v: player.vehicle || null, l: encodeAvatar(player.avatar) };
   }
 
   #join(region, player) {
@@ -127,6 +181,18 @@ export class Net {
       this.peers.set(p.i, peer);
     }
     if (peer.label.textContent !== name) peer.label.textContent = name;
+    // Their look changed (My look): rebuild their character.
+    const l = typeof p.l === 'string' ? p.l : null;
+    if (l !== (peer.l ?? null) && (l === null || decodeAvatar(l))) {
+      const old = peer.char;
+      peer.char = new Character({ seed: name, shadow: false, avatar: decodeAvatar(l) });
+      peer.char.group.position.copy(old.group.position);
+      peer.char.heading = old.heading;
+      peer.char.group.visible = old.group.visible;
+      this.world.scene.remove(old.group);
+      this.world.scene.add(peer.char.group);
+      peer.l = l;
+    }
     // Driving? Show their car instead of their character.
     const v = CARS[p.v] ? p.v : null;
     if (v !== (peer.v || null)) {
@@ -149,13 +215,14 @@ export class Net {
   #reacted(p) {
     const peer = this.peers.get(p?.i);
     if (!peer || typeof p.k !== 'string') return;
-    if (p.k === 'wave') peer.char.play('wave');
+    const anim = reactionByKey[p.k]?.anim;
+    if (anim) peer.char.play(anim);
     this.onReact(peer.car && peer.v ? peer.car : peer.char.group, p.k.slice(0, 12));
   }
 
   // Send one of your reactions to everyone nearby (only if someone is there).
   react(key) {
-    if (this.channel?.state === 'joined' && this.others > 0) {
+    if (!this.hidden && this.channel?.state === 'joined' && this.others > 0) {
       this.channel.send({ type: 'broadcast', event: 'e', payload: { i: this.id, k: key } });
     }
   }
@@ -178,11 +245,20 @@ export class Net {
       if (region !== this.region) {
         for (const id of [...this.peers.keys()]) if (!id.startsWith('bot')) this.#remove(id);
         this.#join(region, player);
+        this.#trackLobby();
       }
       const joined = this.channel?.state === 'joined';
       if (joined && now - (this.lastResync || 0) > 5000) {
         this.lastResync = now;
         this.#syncPresence(true);
+      }
+      // Hide me: leave the presence list and send nothing (you still see others).
+      if (joined && this.hidden) {
+        if (this.tracked) {
+          this.channel.untrack();
+          this.tracked = null;
+        }
+        return this.#drawPeers(dt, now);
       }
       if (joined && this.others > 0 && player.moving && now - this.lastSend > SEND_MOVING_MS) {
         this.lastSend = now;
@@ -194,7 +270,7 @@ export class Net {
       if (joined && !player.moving && now - (this.lastTrack || 0) > 1000) {
         const me = this.#me(player);
         const t = this.tracked;
-        if (!t || t.n !== me.n || t.v !== me.v || Math.hypot(t.x - me.x, t.z - me.z) > 0.5) {
+        if (!t || t.n !== me.n || t.v !== me.v || t.l !== me.l || Math.hypot(t.x - me.x, t.z - me.z) > 0.5) {
           this.tracked = me;
           this.lastTrack = now;
           this.channel.track(me);
@@ -202,6 +278,10 @@ export class Net {
       }
     }
 
+    this.#drawPeers(dt, now);
+  }
+
+  #drawPeers(dt, now) {
     const cam = this.world.camera;
     const v = new THREE.Vector3();
     for (const [id, peer] of this.peers) {

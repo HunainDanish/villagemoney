@@ -8,8 +8,10 @@
 import { NODE_KINDS, MAX_COOLDOWN_MS, nodeById, YARD_SLOTS } from './nodes.js';
 import {
   ENERGY_MAX, ENERGY_REGEN_MS, ENERGY_COST, CROPS, GARDEN_PLOTS, GROCER, COOKBOOK, SNACKS,
-  JOBS, LOCKS, GUARD_DOG, ALARM, RAID, CARS,
+  JOBS, LOCKS, GUARD_DOG, ALARM, RAID, CARS, STAY, HOUSE_POINT_COST, CAR_TIER,
 } from './life.js';
+import { customizeProblem } from './style.js';
+import { avatarProblem, GIFT_POOL } from './look.js';
 
 export const ITEMS = {
   log: { name: 'Log', icon: '🪵', sell: 2 },
@@ -483,6 +485,17 @@ export function applyAction(s, action, ctx) {
       return { ok: true, events };
     }
 
+    // Houses-only mode: take any car your house level has unlocked (free).
+    case 'claimCar': {
+      const need = CAR_TIER[action.model];
+      if (!need) return fail('unknown car');
+      if ((s.tier || 1) < need) return fail(`upgrade your house to unlock the ${CARS[action.model].name}`);
+      if (!s.cars.includes(action.model)) s.cars.push(action.model);
+      s.car = action.model;
+      events.push({ type: 'decor' }, { type: 'car', model: action.model });
+      return { ok: true, events };
+    }
+
     case 'pickCar': {
       if (action.model !== null && !s.cars.includes(action.model)) return fail('you do not own that car');
       s.car = action.model;
@@ -532,6 +545,67 @@ export function applyAction(s, action, ctx) {
       } else {
         s.coins += action.fine || 0;
       }
+      return { ok: true, events };
+    }
+
+    // ---------- daily stay -> house points ----------
+    case 'tick': {
+      // One active minute. The server's clock decides: at most one per ~minute.
+      if (now - (s.lastTick || 0) < STAY.tickMs - 10e3) return fail('too soon');
+      s.lastTick = now;
+      const cap = STAY.minutesPerPoint * STAY.pointsPerDay;
+      const m = s.counts.minutes || 0;
+      if (m >= cap) return { ok: true, events };
+      s.counts.minutes = m + 1;
+      if ((m + 1) % STAY.minutesPerPoint === 0) {
+        s.points = (s.points || 0) + 1;
+        events.push({ type: 'point', points: s.points });
+      }
+      return { ok: true, events };
+    }
+
+    // ---------- My look + daily gift ----------
+    case 'setLook': {
+      const problem = avatarProblem(action.avatar, s.unlocks || []);
+      if (problem) return fail(problem);
+      const { skin, hair, style, shirt, pants, hat } = action.avatar;
+      s.avatar = { skin, hair, style, shirt, pants, hat };
+      events.push({ type: 'look' });
+      return { ok: true, events };
+    }
+
+    case 'dailyGift': {
+      if (s.giftDay === s.day) return fail('you already opened today’s gift: come back tomorrow');
+      s.giftDay = s.day;
+      s.unlocks ||= [];
+      const locked = GIFT_POOL.filter((k) => !s.unlocks.includes(k));
+      if (!locked.length) {
+        events.push({ type: 'gift', unlock: null });
+        return { ok: true, events };
+      }
+      const unlock = locked[Math.floor(ctx.rng() * locked.length) % locked.length];
+      s.unlocks.push(unlock);
+      events.push({ type: 'gift', unlock });
+      return { ok: true, events };
+    }
+
+    // Free customisation; upgrades unlock more parts (see shared/style.js).
+    case 'customize': {
+      const problem = customizeProblem(s.tier || 1, action.part, action.index);
+      if (problem) return fail(problem);
+      s.paint = { ...s.paint, [action.part]: action.index };
+      events.push({ type: 'decor' });
+      return { ok: true, events };
+    }
+
+    case 'pointUpgrade': {
+      const next = (s.tier || 1) + 1;
+      const cost = HOUSE_POINT_COST[next];
+      if (!cost) return fail('your house is fully upgraded');
+      if ((s.points || 0) < cost) return fail(`you need ${cost} house points (you have ${s.points || 0})`);
+      s.points -= cost;
+      s.tier = next;
+      events.push({ type: 'decor' }, { type: 'upgrade', tier: next, name: HOUSE_TIERS[next - 1].name });
       return { ok: true, events };
     }
 
