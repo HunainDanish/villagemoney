@@ -53,3 +53,16 @@ test('house points pay for upgrades, one tier at a time', () => {
   assert.equal(s.tier, 5);
   assert.equal(s.points, 0);
 });
+
+test('cars unlock with house level in houses-only mode', async () => {
+  const { CAR_TIER } = await import('../shared/life.js');
+  let s = initialState();
+  let r;
+  ({ state: s, results: r } = applyBatch(s, [{ a: 'claimCar', model: 'hatch' }, { a: 'claimCar', model: 'pickup' }], ctx(T0)));
+  assert.deepEqual(r.map((x) => x.ok), [true, false]);
+  assert.equal(s.car, 'hatch');
+  s.tier = CAR_TIER.sports;
+  ({ state: s, results: r } = applyBatch(s, [{ a: 'claimCar', model: 'sports' }], ctx(T0)));
+  assert.ok(r[0].ok);
+  assert.deepEqual(s.cars, ['hatch', 'sports']);
+});

@@ -7,7 +7,7 @@ import { Store } from './store.js';
 import { Activities } from './activities.js';
 import { Particles, sfx, isMuted, setMuted } from './fx.js';
 import { loadConfig, loadStats, loadMe, findHouse, send, isDemo } from './api.js';
-import { housePosition, blockOfHouse, normalizeUsername } from '../shared/layout.js';
+import { housePosition, blockOfHouse, normalizeUsername, PITCH } from '../shared/layout.js';
 import {
   ITEMS, RECIPES, SKILLS, WALL_PAINTS, ROOF_PAINTS, PAINT_PRICE, HOUSE_TIERS,
   levelFor, xpForLevel, dailyQuests, questProgress,
@@ -19,6 +19,11 @@ import { createLifeUI } from './life-ui.js';
 import { Joystick } from './joystick.js';
 import { Navigator, doorPoint } from './nav.js';
 import { REACTIONS, Bubbles } from './reactions.js';
+import { Hangout } from './hangout.js';
+import { VENUES } from '../shared/nodes.js';
+import { Music } from './music.js';
+import { nextGoal, reached } from '../shared/life.js';
+import { SKIN, HAIR, HAIR_STYLES, SHIRTS, PANTS, HATS, FREE_SHIRTS, FREE_HATS, defaultAvatar, giftName } from '../shared/look.js';
 import { GAME } from '../shared/features.js';
 import { PALETTES, PREMIUM, PREMIUM_TIER, PART_UNLOCK, PART_NAMES, STARTER_STYLES, lookFor, paletteFor } from '../shared/style.js';
 
@@ -175,10 +180,17 @@ function openPlainHouse(h, mine, onKnock) {
       <div class="stack">
         ${mine ? '' : '<button class="btn primary" id="h-knock">👋 Knock on the door</button>'}
         <button class="btn" id="h-walk">🧭 ${player.vehicle ? 'Drive' : 'Walk'} here</button>
+        <button class="btn" id="h-visit">🚪 Visit inside</button>
         ${h.u ? `<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/${encodeURIComponent(h.u)}/">Open on Instagram</a>` : ''}
       </div>`;
     el.querySelector('#h-knock')?.addEventListener('click', () => (closeSheet(), onKnock(h)));
     el.querySelector('#customize-btn')?.addEventListener('click', openCustomize);
+    el.querySelector('#h-visit')?.addEventListener('click', () => {
+      closeSheet();
+      if (player.vehicle) $('drive-btn').click(); // park first
+      const label = mine ? 'your house' : h.u ? `@${h.u}'s house` : 'this house';
+      hangout.visit({ id: h.id, x: h.x, z: h.z, facing: h.facing, t: h.t, p: h.p, label }, doorPoint(h.id));
+    });
     el.querySelector('#h-walk')?.addEventListener('click', () => {
       closeSheet();
       directionsToHouse(h.id, mine ? 'your house' : h.u ? `@${h.u}'s house` : 'this house');
@@ -545,15 +557,23 @@ function openMenu() {
       ${me ? `<p>Signed in as <b>@${esc(me.username)}</b> · House #${fmt.format(me.id)}</p>` : `<p>${isDemo() ? 'Demo mode.' : 'You are exploring as a guest.'}</p>`}
       <p>${liveStatus()}</p>
       <label class="toggle"><input type="checkbox" id="m-sound" ${isMuted() ? '' : 'checked'} /> Sound effects</label>
+      <label class="toggle"><input type="checkbox" id="m-music" ${music.on ? 'checked' : ''} /> 🎵 Music</label>
       ${me && !me.demo ? `<label class="toggle"><input type="checkbox" id="m-hide" ${me.hidden ? 'checked' : ''} /> Hide my username (shows as “A neighbour”)</label>` : ''}
+      <label class="toggle"><input type="checkbox" id="m-ghost" ${net.hidden ? 'checked' : ''} /> 👻 Hide me (other players can't see you walking)</label>
       <div class="stack">
-        ${me ? '<button class="btn" id="m-decor">🪴 Decorate my yard</button>' : ''}
+        <button class="btn primary" id="m-look">👕 My look</button>
+        <button class="btn" id="m-gift">🎁 Daily gift${store.state.giftDay === store.state.day ? ' (opened ✓)' : ''}</button>
+        ${me && GAME ? '<button class="btn" id="m-decor">🪴 Decorate my yard</button>' : ''}
         ${me && !me.demo ? `<button class="btn" id="m-password">🔒 ${me.has_password ? 'Change my password' : 'Set a password'}</button>` : ''}
         ${!me && !isDemo() ? '<button class="btn primary" id="m-signin">Sign in</button>' : ''}
         ${me && !me.demo ? '<button class="btn" id="m-logout">Sign out</button><button class="btn danger" id="m-delete">Delete my house and account</button>' : ''}
         <a class="btn" href="/privacy">Privacy</a>
       </div>`;
     el.querySelector('#m-sound').onchange = (e) => setMuted(!e.target.checked);
+    el.querySelector('#m-look').onclick = openLook;
+    el.querySelector('#m-music').onchange = (e) => music.toggle(e.target.checked);
+    el.querySelector('#m-gift').onclick = openGift;
+    el.querySelector('#m-ghost').onchange = (e) => setGhost(e.target.checked);
     el.querySelector('#m-decor')?.addEventListener('click', openDecor);
     el.querySelector('#m-password')?.addEventListener('click', openPassword);
     el.querySelector('#m-signin')?.addEventListener('click', openSignIn);
@@ -680,12 +700,13 @@ const bubbles = new Bubbles($('labels'), world.camera);
 net.onReact = (object, key) => bubbles.show(object, key, player.vehicle ? 3 : 4.6);
 function react(key) {
   $('react-menu').hidden = true;
-  if (key === 'wave') player.char.play('wave');
+  const anim = REACTIONS.find((r) => r.k === key)?.anim;
+  if (anim) player.char.play(anim);
   bubbles.show(player.body, key, player.vehicle ? 3 : 4.6);
   sfx.click();
   net.react(key);
 }
-$('react-menu').innerHTML = REACTIONS.map((r) => `<button data-react="${r.k}" class="${r.text ? 'text' : ''}">${r.text || r.icon}</button>`).join('');
+$('react-menu').innerHTML = REACTIONS.filter((r) => !r.hidden).map((r) => `<button data-react="${r.k}" class="${r.text ? 'text' : ''}">${r.text || r.icon}</button>`).join('');
 $('react-menu').querySelectorAll('[data-react]').forEach((b) => (b.onclick = () => react(b.dataset.react)));
 $('react-btn').onclick = () => ($('react-menu').hidden = !$('react-menu').hidden);
 $('run-btn').onclick = () => {
@@ -751,8 +772,97 @@ function openPlaces() {
 }
 $('places-btn').onclick = openPlaces;
 
+// ---------- plaza venues (houses-only mode) ----------
+const hangout = new Hangout({ world, player, net, ui, sfx, particles, react, openSheet, closeSheet, bar: $('seatbar') });
+ui.sit = (seat) => hangout.sit(seat);
+ui.dice = () => hangout.rollDice();
+ui.ride = () => hangout.ride();
+ui.openPlace = (name) => {
+  const tips = {
+    cafe: '☕ Tap a chair to sit, then order from the menu',
+    hall: '🏛️ Tap a bench to sit and watch the big screen',
+    playground: '🛝 Tap a swing, or the green table to roll the dice',
+  };
+  if (name === 'wheel') return hangout.ride();
+  if (tips[name]) ui.toast(tips[name]);
+};
+
+// ---------- town life: new neighbours, online + join, goals, music ----------
+function openNeighbours() {
+  openSheet('New neighbours', (el) => {
+    const goal = nextGoal(townStats.residents);
+    el.innerHTML = `
+      <p>🏠 ${fmt.format(townStats.residents)} people live here.${goal ? ` <b>${fmt.format(goal.at - townStats.residents)} more</b> until ${goal.name}!` : ' Every town goal is reached 🎉'}</p>
+      <h3>Just moved in</h3>
+      ${townStats.latest.length ? townStats.latest.map((n) => `<div class="row"><span class="ico">🏡</span><div class="grow"><b>@${esc(n.u)}</b><small>House #${fmt.format(n.id)}</small></div><button class="btn" data-go="${n.id}" data-u="${esc(n.u)}">🧭 Go</button></div>`).join('') : '<p>No one yet. Be the first!</p>'}
+      <p>Invite friends: every follower who DMs us "key" gets a house, and helps the town reach its next goal.</p>`;
+    el.querySelectorAll('[data-go]').forEach((b) =>
+      (b.onclick = () => {
+        closeSheet();
+        directionsToHouse(Number(b.dataset.go), `@${b.dataset.u}'s house`);
+      }),
+    );
+  });
+}
+document.querySelector('.brand').onclick = openNeighbours;
+
+function renderOnline() {
+  const chip = $('online-chip');
+  const n = isDemo() ? (net.peers.size || 0) + 1 : net.online;
+  chip.hidden = !n;
+  chip.textContent = `👥 ${fmt.format(n)} online${net.busiestRegion() ? ' · Join' : ''}`;
+}
+setInterval(renderOnline, 3000);
+$('online-chip').onclick = () => {
+  const busy = net.busiestRegion();
+  if (!busy) return ui.toast(isDemo() ? '👥 Everyone is here at the plaza!' : 'You are with everyone already 👋');
+  hangout.leaveHouse();
+  hangout.stopRide();
+  const c = busy.center;
+  // Land on the road next to the busiest area, not inside a house.
+  const x = Math.round(c.x / PITCH) * PITCH + PITCH / 2;
+  const z = Math.round(c.z / PITCH) * PITCH;
+  player.teleport(x, z, c.x, c.z);
+  ui.toast(`👥 Joining ${busy.people} ${busy.people === 1 ? 'person' : 'people'} nearby`);
+};
+
+const music = new Music();
+addEventListener('pointerdown', () => music.resume(), { once: true });
+
+// Goals the town has reached switch things on for everyone.
+let fireworkAt = 0;
+function townGoals(now) {
+  const n = townStats.residents;
+  const nearPlaza = Math.hypot(player.pos.x, player.pos.z) < 260;
+  if (reached(n, 100) && world.night > 0.6 && nearPlaza && now - fireworkAt > 1100) {
+    fireworkAt = now;
+    const a = Math.random() * Math.PI * 2;
+    const colors = [[0xff5e5e, 0xffd166], [0x7cc35d, 0xffffff], [0x6fb8ff, 0xc77dff], [0xffb347, 0xff6f91]][Math.floor(Math.random() * 4)];
+    particles.burst(Math.cos(a) * 30, 28 + Math.random() * 10, Math.sin(a) * 30, { n: 40, colors, size: 0.5, speed: 9, up: 2, life: 1.6, gravity: 3, spin: 2 });
+    if (Math.random() < 0.5) sfx.click();
+  }
+  world.goldFountain = reached(n, 500);
+  world.venues?.setLights(reached(n, 1000) && world.night > 0.5);
+}
+
+// The hall's big screen: town news, refreshed every few seconds.
+let screenTick = 0;
+function drawScreens() {
+  const v = world.venues;
+  if (!v) return;
+  const residents = Number(($('count').textContent.match(/[\d,]+/) || ['0'])[0].replace(/,/g, '')) || 0;
+  const lines = [
+    `Welcome to ${cfg?.townName || 'town'}!`,
+    `🏠 ${fmt.format(residents)} neighbours`,
+    world.sky.clock(),
+    ['👋 Say hi to someone today', '📸 Take a photo at the café', '🎡 Ride the Ferris wheel', '🧭 Visit a neighbour with Places'][screenTick++ % 4],
+  ];
+  for (const s of v.screens) s.draw(lines);
+}
+setInterval(drawScreens, 5000);
+
 function renderDrive() {
-  const has = GAME && Boolean(store.state.car);
+  const has = Boolean(store.state.car);
   $('drive-btn').hidden = !has;
   $('drive-btn').classList.toggle('primary', Boolean(player.vehicle));
 }
@@ -784,7 +894,67 @@ function renderMe() {
   $('home-btn').hidden = !me;
   $('key-btn').hidden = Boolean(me);
   net.name = me && !me.hidden ? me.username : 'Neighbour';
-  player.setName(net.name);
+  player.setLook(net.name, store.state.avatar || null);
+}
+
+// ---------- My look, daily gift, hide me ----------
+function currentAvatar() {
+  return { ...(store.state.avatar || defaultAvatar(net.name)) };
+}
+
+function openLook() {
+  openSheet('My look', (el) => {
+    $('sheet').classList.add('short'); // keep your character visible above
+    const av = currentAvatar();
+    const unlocks = store.state.unlocks || [];
+    const sw = (part, list, free = list.length) =>
+      `<div class="swatches">${list.map((c, i) => {
+        const locked = i >= free && !unlocks.includes(`${part}:${i}`);
+        return `<button class="swatch ${av[part] === i ? 'on' : ''} ${locked ? 'locked' : ''}" style="background:${hex(c)}" data-part="${part}" data-i="${i}" ${locked ? 'disabled title="Unlock with the daily gift"' : ''}>${locked ? '🎁' : ''}</button>`;
+      }).join('')}</div>`;
+    const btns = (part, names, free = names.length) =>
+      `<div class="wrap">${names.map((n, i) => {
+        const locked = i >= free && !unlocks.includes(`${part}:${i}`);
+        return `<button class="btn ${av[part] === i ? 'primary' : ''}" data-part="${part}" data-i="${i}" ${locked ? 'disabled' : ''}>${locked ? '🎁 ' : ''}${n}</button>`;
+      }).join('')}</div>`;
+    el.innerHTML = `
+      <p>Everyone sees your look as you walk around. 🎁 items unlock with the daily gift.</p>
+      <h3>Skin</h3>${sw('skin', SKIN)}
+      <h3>Hair</h3>${btns('style', HAIR_STYLES)}${sw('hair', HAIR)}
+      <h3>Shirt</h3>${sw('shirt', SHIRTS, FREE_SHIRTS)}
+      <h3>Trousers</h3>${sw('pants', PANTS)}
+      <h3>Hat</h3>${btns('hat', HATS, FREE_HATS)}`;
+    el.querySelectorAll('[data-part]').forEach((b) =>
+      (b.onclick = async () => {
+        const next = { ...currentAvatar(), [b.dataset.part]: Number(b.dataset.i) };
+        const r = await act({ a: 'setLook', avatar: next });
+        if (r.ok) {
+          sfx.click();
+          player.setLook(net.name, store.state.avatar);
+          player.char.play('wave');
+          openLook();
+        }
+      }),
+    );
+  });
+}
+
+async function openGift() {
+  if (store.state.giftDay === store.state.day) return ui.toast('You already opened today’s gift. Come back tomorrow! 🎁');
+  const r = await act({ a: 'dailyGift' });
+  if (!r.ok) return;
+  const g = r.events.find((e) => e.type === 'gift');
+  sfx.level();
+  particles.sparkle(player.pos.x, 3, player.pos.z);
+  ui.celebrate(g?.unlock ? `🎁 You unlocked ${giftName(g.unlock)}! Try it in My look.` : '🎁 You have everything already. Come back tomorrow!');
+}
+
+function setGhost(on) {
+  net.hidden = on;
+  net.refreshLobby();
+  player.ghost = on;
+  player.char.setGhost(on);
+  ui.toast(on ? '👻 Hidden: other players can’t see you' : 'Visible again 👋');
 }
 
 // Show my own decor/paint right away (the shared CDN copy updates later).
@@ -811,15 +981,21 @@ store.on((state, events) => {
   }
   for (const e of events || []) if (e.type === 'daily') ui.celebrate(`🔥 Day ${e.streak} streak · +${e.coins} 🪙`);
   if (events?.some((e) => e.type === 'decor')) syncOwnHouse();
+  if (events?.some((e) => e.type === 'look')) player.setLook(net.name, state.avatar || null);
   world.markNodesDirty();
   rerender();
 });
 
+let townStats = { residents: 0, latest: [] };
 async function refreshStats() {
   try {
     const s = await loadStats();
+    townStats = { residents: s.residents, latest: s.latest || [] };
     world.setTotal(s.maxId);
-    $('count').textContent = `${fmt.format(s.residents)} people live here`;
+    const goal = nextGoal(s.residents);
+    $('count').textContent = goal
+      ? `${fmt.format(s.residents)} live here · ${fmt.format(goal.at - s.residents)} more until ${goal.name}`
+      : `${fmt.format(s.residents)} people live here · all town goals reached 🎉`;
   } catch {
     $('count').textContent = 'Town is offline, try again soon';
   }
@@ -833,7 +1009,7 @@ async function boot() {
   $('demo-badge').hidden = !isDemo();
   if (!GAME) {
     // Just houses: hide everything that belongs to the game.
-    for (const id of ['coins', 'energy', 'bag-btn', 'quests-btn', 'friends-btn', 'drive-btn']) $(id).hidden = true;
+    for (const id of ['coins', 'energy', 'bag-btn', 'quests-btn', 'friends-btn']) $(id).hidden = true;
     $('hint').innerHTML = 'Walk around and visit your neighbours · WASD or tap to walk · drag to turn · <span id="online">0</span> nearby';
     $('demo-badge').textContent = 'Demo mode · fake residents';
   }
@@ -872,7 +1048,10 @@ async function boot() {
   setInterval(() => ($('energy').textContent = `⚡ ${energyNow(store.state, Date.now())}`), 30000);
   for (const e of res.events || []) if (e.type === 'received') ui.celebrate(`🎁 Gift from @${e.from}!`);
 
-  if (await net.connect(cfg.supabaseUrl, cfg.supabaseAnonKey)) addEventListener('pagehide', () => net.leave());
+  if (await net.connect(cfg.supabaseUrl, cfg.supabaseAnonKey)) {
+    addEventListener('pagehide', () => net.leave());
+    net.joinLobby();
+  }
   else if (isDemo()) net.startBots();
   net.onCount = (n) => ($('online').textContent = n);
 }
@@ -892,6 +1071,8 @@ function frame(now) {
   player.update(dt);
   world.update(player.pos.x, player.pos.z, t, dt);
   activities.update(t);
+  hangout.update(dt);
+  townGoals(now);
   nav.update(t);
   bubbles.update();
   net.update(player, dt, now);
@@ -908,4 +1089,4 @@ requestAnimationFrame(frame);
 boot();
 
 // Expose a tiny debug handle in development only.
-if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, life, nav, net, react, openPlaces, openSignIn, openPassword, setMe: (m) => (me = m) };
+if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, VENUES, life, nav, net, react, hangout, openPlaces, openSignIn, openPassword, setMe: (m) => (me = m) };

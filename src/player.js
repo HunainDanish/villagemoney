@@ -131,12 +131,20 @@ export class Player {
     return this.carMesh || this.char.group;
   }
 
-  // Look like other players see you: characters are styled from the name.
+  // Look like other players see you: your chosen look, or one from your name.
   setName(name) {
-    if (name === this.lookName) return;
+    this.setLook(name, this.avatar);
+  }
+
+  setLook(name, avatar = null) {
+    const key = `${name}|${avatar ? Object.values(avatar).join('.') : ''}`;
+    if (key === this.lookKey) return;
+    this.lookKey = key;
     this.lookName = name;
+    this.avatar = avatar;
     const old = this.char;
-    this.char = new Character({ seed: name, shadow: true });
+    this.char = new Character({ seed: name, shadow: true, avatar });
+    if (this.ghost) this.char.setGhost(true);
     this.char.heading = old.heading;
     this.char.group.position.copy(old.group.position);
     this.char.group.rotation.y = old.group.rotation.y;
@@ -160,7 +168,30 @@ export class Player {
   // Stop walking and stop any activity.
   cancel() {
     this.target = null;
+    this.leaveSeat();
     this.onCancel();
+  }
+
+  // Sit on a chair / bench / swing: stay put until you move.
+  sitOn(seat, y) {
+    this.target = null;
+    this.seat = seat;
+    this.seatY = y;
+    this.pos.set(seat.x, 0, seat.z);
+    this.heading = seat.h;
+    this.char.heading = seat.h;
+  }
+
+  leaveSeat() {
+    if (!this.seat) return;
+    const h = this.seat.h;
+    this.seat = null;
+    this.seatY = 0;
+    this.char.stop();
+    // Step back off the seat.
+    this.pos.x -= Math.sin(h) * 1.3;
+    this.pos.z -= Math.cos(h) * 1.3;
+    this.onStand?.();
   }
 
   teleport(x, z, faceX, faceZ) {
@@ -194,6 +225,14 @@ export class Player {
       this.target = null;
     }
 
+    // Seated or riding: any move input stands you up (riding ends via Get off).
+    if (this.seat && (fx || fz)) this.leaveSeat();
+    if (this.seat || this.riding) {
+      fx = 0;
+      fz = 0;
+      this.target = null;
+    }
+
     let dir = null;
     if (fx || fz) {
       const s = Math.sin(this.yaw);
@@ -217,11 +256,13 @@ export class Player {
       const step = this.speed * dt;
       const nx = this.pos.x + dir.x * step;
       const nz = this.pos.z + dir.y * step;
-      let moved = false;
+      const before = { x: this.pos.x, z: this.pos.z };
       // Already inside something (e.g. after a teleport)? Let them walk out.
       const stuck = this.world.blocked(this.pos.x, this.pos.z);
-      if (stuck || !this.world.blocked(nx, this.pos.z)) { this.pos.x = nx; moved = true; }
-      if (stuck || !this.world.blocked(this.pos.x, nz)) { this.pos.z = nz; moved = true; }
+      if (stuck || !this.world.blocked(nx, this.pos.z)) this.pos.x = nx;
+      if (stuck || !this.world.blocked(this.pos.x, nz)) this.pos.z = nz;
+      // Only real progress counts (sliding by zero along a wall doesn't).
+      const moved = Math.hypot(this.pos.x - before.x, this.pos.z - before.z) > step * 0.2;
       if (!moved && this.target && !this.target.onArrive) this.target = null;
       if (!moved && this.target?.onArrive && Math.hypot(this.target.x - this.pos.x, this.target.z - this.pos.z) < this.target.range + 2.5) {
         // Close enough to interact even if something is in the way.
@@ -239,6 +280,7 @@ export class Player {
     }
 
     this.char.group.position.copy(this.pos);
+    if (this.seat) this.char.group.position.y = this.seatY;
     this.char.face(this.heading, dt);
     this.char.update(dt, this.moving ? this.speed : 0);
     if (this.carMesh) {
@@ -256,11 +298,11 @@ export class Player {
     }
     const car = this.vehicle ? 1.35 : 1;
     const dist = (street ? 11 : 30) * this.zoom * car;
-    const height = street ? (4.2 + 3.2 * this.zoom) * car : 28 * this.zoom + 3;
+    const height = (street ? (4.2 + 3.2 * this.zoom) * car : 28 * this.zoom + 3) + this.pos.y;
     const ahead = this.moving ? (street ? 5 : 3) : street ? 2 : 0;
     const lookX = this.pos.x + Math.sin(this.heading) * ahead;
     const lookZ = this.pos.z + Math.cos(this.heading) * ahead;
-    const lookY = street ? 2.6 : 3;
+    const lookY = (street ? 2.6 : 3) + this.pos.y;
     const tx = this.pos.x + Math.sin(this.yaw) * dist;
     const tz = this.pos.z + Math.cos(this.yaw) * dist;
     if (!this.camReady) {

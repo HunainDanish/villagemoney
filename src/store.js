@@ -8,8 +8,8 @@ import { applyBatch, initialState } from '../shared/game.js';
 
 const KEY = 'pl_game_v1';
 const FLUSH_MS = 20000;
-const SERVER_DECIDES = new Set(['fish']);
-const URGENT = new Set(['craft', 'place', 'sell', 'paint', 'claim', 'upgrade']);
+const SERVER_DECIDES = new Set(['fish', 'dailyGift']); // random rewards: the server rolls
+const URGENT = new Set(['craft', 'place', 'sell', 'paint', 'claim', 'upgrade', 'setLook', 'claimCar', 'customize', 'pointUpgrade']);
 
 function readLocal(key) {
   try {
@@ -88,12 +88,19 @@ export class Store {
   // Apply an action. Resolves to { ok, reason, events }.
   async act(action) {
     if (this.member && SERVER_DECIDES.has(action.a)) {
+      const unlocksBefore = new Set(this.state.unlocks || []);
       this.queue.push(action);
       const res = await this.flush();
       const r = res?.results?.at(-1);
       if (!res) return { ok: false, reason: 'offline, try again', events: [] };
-      // The server's events aren't returned; diff the inventory to describe the catch.
-      return r?.ok ? { ok: true, events: res.gained } : { ok: false, reason: r?.reason || 'failed', events: [] };
+      if (!r?.ok) return { ok: false, reason: r?.reason || 'failed', events: [] };
+      // The server's events aren't returned; diff the state to describe what happened.
+      const events = [...res.gained];
+      if (action.a === 'dailyGift') {
+        const unlock = (this.state.unlocks || []).find((k) => !unlocksBefore.has(k)) || null;
+        events.push({ type: 'gift', unlock });
+      }
+      return { ok: true, events };
     }
     const { state, results } = applyBatch(this.state, [action], this.ctx());
     const r = results[0];

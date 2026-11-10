@@ -9,16 +9,7 @@ import * as THREE from 'three';
 //   wave  - one arm waving
 // Animation blends smoothly between states, so nothing pops.
 
-const SKIN = [0xf6d2b5, 0xe8b894, 0xc68a62, 0x9a6440, 0x6f4429];
-const HAIR = [0x2b1d16, 0x5a3a22, 0x8a5a2b, 0xd9b26a, 0x1d1d22, 0xa23b2a];
-const SHIRT = [0x3d7cf5, 0xe85d5d, 0x45b36b, 0xf2b134, 0x8e5cd9, 0x2bb3b3, 0xf07ab1, 0x4a4f5c];
-const PANTS = [0x2f3a56, 0x3b3b3b, 0x5a4636, 0x2e5249, 0x6b6f7a];
-
-function hash(str) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
-  return h >>> 0;
-}
+import { SKIN, HAIR, SHIRTS, PANTS, defaultAvatar } from '../shared/look.js';
 
 // Shared geometries: every character reuses them.
 const G = {
@@ -33,6 +24,16 @@ const G = {
   shadow: new THREE.CircleGeometry(0.9, 20).rotateX(-Math.PI / 2),
   axeHandle: new THREE.CylinderGeometry(0.05, 0.05, 1.1, 6).translate(0, -0.55, 0),
   axeHead: new THREE.BoxGeometry(0.08, 0.32, 0.42).translate(0, -1.0, 0.16),
+  // Hair styles and hats (all sit on the head group).
+  longHair: new THREE.BoxGeometry(1.1, 0.9, 0.35).translate(0, -0.25, -0.42),
+  bun: new THREE.SphereGeometry(0.26, 10, 8).translate(0, 0.62, -0.32),
+  capCrown: new THREE.SphereGeometry(0.68, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.42).translate(0, 0.08, 0),
+  capBrim: new THREE.CylinderGeometry(0.5, 0.5, 0.06, 14, 1, false, -Math.PI / 2, Math.PI).translate(0, 0.3, 0.42),
+  beanie: new THREE.SphereGeometry(0.7, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 1.15, 1).translate(0, 0.1, 0),
+  pompom: new THREE.SphereGeometry(0.16, 8, 6).translate(0, 0.92, 0),
+  flower: new THREE.IcosahedronGeometry(0.13, 0),
+  party: new THREE.ConeGeometry(0.32, 0.8, 12).translate(0, 0.95, 0),
+  crown: new THREE.CylinderGeometry(0.42, 0.38, 0.32, 10, 1, true).translate(0, 0.66, 0),
 };
 const MATS = new Map();
 const mat = (hex) => {
@@ -45,12 +46,15 @@ const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: tr
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 
 export class Character {
-  constructor({ seed = 'me', shadow = true, look = {} } = {}) {
-    const h = hash(seed);
-    const skin = look.skin ?? SKIN[h % SKIN.length];
-    const hair = look.hair ?? HAIR[(h >>> 4) % HAIR.length];
-    const shirt = look.shirt ?? SHIRT[(h >>> 8) % SHIRT.length];
-    const pants = look.pants ?? PANTS[(h >>> 12) % PANTS.length];
+  // avatar = { skin, hair, style, shirt, pants, hat } (indices, shared/look.js);
+  // without one, the look comes from the name so everyone differs.
+  constructor({ seed = 'me', shadow = true, avatar = null } = {}) {
+    const av = avatar || defaultAvatar(seed);
+    this.avatar = av;
+    const skin = SKIN[av.skin] ?? SKIN[0];
+    const hair = HAIR[av.hair] ?? HAIR[0];
+    const shirt = SHIRTS[av.shirt] ?? SHIRTS[0];
+    const pants = PANTS[av.pants] ?? PANTS[0];
 
     const group = new THREE.Group();
     group.scale.setScalar(0.72); // ~2.9 units tall: doors are 3.4 units
@@ -66,10 +70,29 @@ export class Character {
     head.position.y = 3.25;
     root.add(head);
     head.add(new THREE.Mesh(G.head, mat(skin)));
-    const hairMesh = new THREE.Mesh(G.hair, mat(hair));
-    hairMesh.rotation.x = -0.25;
-    hairMesh.position.y = 0.04;
-    head.add(hairMesh);
+    if (av.style !== 3) {
+      // 0 short, 1 long, 2 bun, 3 bald
+      const hairMesh = new THREE.Mesh(G.hair, mat(hair));
+      hairMesh.rotation.x = -0.25;
+      hairMesh.position.y = 0.04;
+      head.add(hairMesh);
+      if (av.style === 1) head.add(new THREE.Mesh(G.longHair, mat(hair)));
+      if (av.style === 2) head.add(new THREE.Mesh(G.bun, mat(hair)));
+    }
+    // Hats: 0 none, 1 cap, 2 beanie, 3 flower crown, 4 party hat, 5 crown.
+    if (av.hat === 1) head.add(new THREE.Mesh(G.capCrown, mat(shirt)), new THREE.Mesh(G.capBrim, mat(shirt)));
+    if (av.hat === 2) head.add(new THREE.Mesh(G.beanie, mat(0xd94141)), new THREE.Mesh(G.pompom, mat(0xffffff)));
+    if (av.hat === 3) {
+      const cols = [0xff6f91, 0xffd166, 0xc77dff, 0xffffff, 0xff9e5e, 0x7cc35d];
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2;
+        const f = new THREE.Mesh(G.flower, mat(cols[i % cols.length]));
+        f.position.set(Math.cos(a) * 0.55, 0.42, Math.sin(a) * 0.55);
+        head.add(f);
+      }
+    }
+    if (av.hat === 4) head.add(new THREE.Mesh(G.party, mat(0x8e5cd9)), new THREE.Mesh(G.pompom, mat(0xffd166)).translateY(0.45));
+    if (av.hat === 5) head.add(new THREE.Mesh(G.crown, new THREE.MeshLambertMaterial({ color: 0xd4af37, side: THREE.DoubleSide })));
     const eyes = [-0.22, 0.22].map((x) => {
       const e = new THREE.Mesh(G.eye, eyeMat);
       e.position.set(x, 0.06, 0.55);
@@ -125,6 +148,22 @@ export class Character {
     this.action = null; // { type: 'chop' | 'wave', t }
   }
 
+  // Semi-transparent "ghost" look while hidden from other players.
+  setGhost(on) {
+    this.group.traverse((o) => {
+      if (!o.isMesh || o.material === shadowMat) return;
+      if (on && !o.userData.ownMat) {
+        o.material = o.material.clone();
+        o.userData.ownMat = true;
+      }
+      if (o.userData.ownMat) {
+        o.material.transparent = on;
+        o.material.opacity = on ? 0.35 : 1;
+        o.material.depthWrite = !on;
+      }
+    });
+  }
+
   // Rotate smoothly toward a heading (radians).
   face(target, dt) {
     let d = target - this.heading;
@@ -162,10 +201,47 @@ export class Character {
     let bob = Math.abs(Math.sin(p)) * (0.16 * walk + 0.12 * run);
     let headTilt = 0;
 
+    let legLx = -swing * 1.05;
+    let legRx = swing * 1.05;
+    let rootZ = 0;
     if (this.action) {
       const a = this.action;
       a.t += dt;
-      if (a.type === 'chop') {
+      if (a.type === 'dance') {
+        // Arms up, swaying; little hops. Lasts 3 s.
+        const k = a.t * 7;
+        armL = -2.6 + Math.sin(k) * 0.5;
+        armR = -2.6 - Math.sin(k) * 0.5;
+        armLz = 0.5;
+        armRz = -0.5;
+        rootZ = Math.sin(k * 0.5) * 0.18;
+        bob = Math.abs(Math.sin(k)) * 0.3;
+        legLx = Math.sin(k) * 0.4;
+        legRx = -Math.sin(k) * 0.4;
+        if (a.t > 3) this.stop();
+      } else if (a.type === 'clap') {
+        const k = Math.sin(a.t * 18);
+        armL = armR = -1.3;
+        armLz = 0.35 + k * 0.3;
+        armRz = -0.35 - k * 0.3;
+        if (a.t > 1.6) this.stop();
+      } else if (a.type === 'jump') {
+        const k = (a.t % 0.7) / 0.7;
+        bob = Math.sin(k * Math.PI) * 1.4;
+        armL = armR = -2.8;
+        armLz = 0.6;
+        armRz = -0.6;
+        if (a.t > 2.1) this.stop();
+      } else if (a.type === 'sit' || a.type === 'ride' || a.type === 'swing') {
+        // Seated: legs forward, body lowered. Swinging rocks back and forth.
+        legLx = legRx = -1.45;
+        bob = -1.05;
+        armL = armR = a.type === 'swing' ? -2.2 : -0.35;
+        lean = a.type === 'swing' ? Math.sin(a.t * 2.4) * 0.45 : -0.08;
+        if (a.type === 'swing') {
+          legLx = legRx = -1.45 + Math.sin(a.t * 2.4) * 0.5;
+        }
+      } else if (a.type === 'chop') {
         // 0.6 s loop: wind up overhead, strike down.
         const k = (a.t % 0.6) / 0.6;
         // Negative x-rotation raises the arm forward/up; end the strike forward-down.
@@ -195,8 +271,9 @@ export class Character {
     this.armR.rotation.x = damp(this.armR.rotation.x, armR, 18, dt);
     this.armL.rotation.z = damp(this.armL.rotation.z, armLz, 12, dt);
     this.armR.rotation.z = damp(this.armR.rotation.z, armRz, 12, dt);
-    this.legL.rotation.x = -swing * 1.05;
-    this.legR.rotation.x = swing * 1.05;
+    this.legL.rotation.x = damp(this.legL.rotation.x, legLx, 14, dt);
+    this.legR.rotation.x = damp(this.legR.rotation.x, legRx, 14, dt);
+    this.root.rotation.z = damp(this.root.rotation.z, rootZ, 8, dt);
     this.root.rotation.x = damp(this.root.rotation.x, lean, 8, dt);
     this.root.position.y = bob + breathe;
     this.head.rotation.z = damp(this.head.rotation.z, headTilt + Math.sin(p * 0.5) * 0.04 * walk, 6, dt);

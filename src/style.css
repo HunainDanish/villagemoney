@@ -145,6 +145,16 @@ select { font: inherit; padding: 8px; border-radius: 10px; border: 2px solid var
 .navbar button { width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.2); color: #fff; font-size: 16px; cursor: pointer; }
 @media (max-width: 640px) { .navbar { top: calc(max(12px, env(safe-area-inset-top)) + 150px); } }
 
+/* Actions while seated / riding */
+.seatbar { position: fixed; left: 50%; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 96px); transform: translateX(-50%); display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; z-index: 7; max-width: calc(100vw - 32px); }
+.seatbar .btn { box-shadow: var(--shadow); }
+@media (max-width: 640px) { .seatbar { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 230px); } }
+body.flash::after { content: ''; position: fixed; inset: 0; background: #fff; opacity: .8; z-index: 50; pointer-events: none; animation: flash .25s ease-out forwards; }
+@keyframes flash { to { opacity: 0; } }
+
+.chip-btn { cursor: pointer; font: inherit; font-weight: 800; color: var(--ink); }
+.brand { cursor: pointer; }
+
 [hidden] { display: none !important; }
 
 /* Phones held sideways: short screens need a slimmer HUD. */

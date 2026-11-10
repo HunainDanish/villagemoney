@@ -31,7 +31,11 @@ export async function loadConfig() {
 export const isDemo = () => demo;
 
 export async function loadStats() {
-  if (demo) return { residents: DEMO_HOUSES, maxId: DEMO_HOUSES };
+  if (demo) {
+    const latest = [];
+    for (let id = DEMO_HOUSES; latest.length < 8; id--) if (id % 23) latest.push({ id, u: demoName(id) });
+    return { residents: DEMO_HOUSES, maxId: DEMO_HOUSES, latest };
+  }
   return get('/api/stats');
 }
 

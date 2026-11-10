@@ -12,6 +12,9 @@ import * as Props from './props.js';
 import { CROPS, CARS } from '../shared/life.js';
 import { cropReadyAt } from '../shared/game.js';
 import { GAME } from '../shared/features.js';
+import { buildVenues } from './venues.js';
+import { buildInterior, INTERIOR_ORIGIN } from './interior.js';
+import { VENUES } from '../shared/nodes.js';
 import { lookFor, colorOf } from '../shared/style.js';
 import { Sky } from './sky.js';
 import { loadBlock } from './api.js';
@@ -288,73 +291,75 @@ export class World {
     dock.castShadow = dock.receiveShadow = true;
     g.add(rim, this.pondWater, lily, dock);
 
-    // Workbench (crafting).
-    const W = PLAZA.workbench;
-    const bench = new THREE.Group();
-    bench.position.set(W.x, 0, W.z);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(5, 0.4, 2.6), new THREE.MeshLambertMaterial({ color: 0xa8774a }));
-    top.position.y = 1.9;
-    for (const [x, z] of [[-2.2, -1], [2.2, -1], [-2.2, 1], [2.2, 1]]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.8, 0.35), new THREE.MeshLambertMaterial({ color: 0x7a5233 }));
-      leg.position.set(x, 0.9, z);
-      leg.castShadow = true;
-      bench.add(leg);
-    }
-    const saw = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.05, 0.5), new THREE.MeshLambertMaterial({ color: 0xb8bcc6 }));
-    saw.position.set(-1, 2.15, 0.2);
-    const logs = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 2.4, 8).rotateZ(Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x8a5a2b }));
-    logs.position.set(1.2, 2.45, -0.3);
-    top.castShadow = logs.castShadow = true;
-    bench.add(top, saw, logs);
-    g.add(bench);
+    if (GAME) {
+      // Workbench (crafting).
+      const W = PLAZA.workbench;
+      const bench = new THREE.Group();
+      bench.position.set(W.x, 0, W.z);
+      const top = new THREE.Mesh(new THREE.BoxGeometry(5, 0.4, 2.6), new THREE.MeshLambertMaterial({ color: 0xa8774a }));
+      top.position.y = 1.9;
+      for (const [x, z] of [[-2.2, -1], [2.2, -1], [-2.2, 1], [2.2, 1]]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.35, 1.8, 0.35), new THREE.MeshLambertMaterial({ color: 0x7a5233 }));
+        leg.position.set(x, 0.9, z);
+        leg.castShadow = true;
+        bench.add(leg);
+      }
+      const saw = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.05, 0.5), new THREE.MeshLambertMaterial({ color: 0xb8bcc6 }));
+      saw.position.set(-1, 2.15, 0.2);
+      const logs = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 2.4, 8).rotateZ(Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x8a5a2b }));
+      logs.position.set(1.2, 2.45, -0.3);
+      top.castShadow = logs.castShadow = true;
+      bench.add(top, saw, logs);
+      g.add(bench);
 
-    // Market stall (sell items, buy paint).
-    const S = PLAZA.stall;
-    const stall = new THREE.Group();
-    stall.position.set(S.x, 0, S.z);
-    const counter = new THREE.Mesh(new THREE.BoxGeometry(6, 1.8, 2.2), new THREE.MeshLambertMaterial({ color: 0xa8774a }));
-    counter.position.y = 0.9;
-    counter.castShadow = true;
-    stall.add(counter);
-    for (const x of [-2.8, 2.8]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.6, 0.3), new THREE.MeshLambertMaterial({ color: 0x7a5233 }));
-      post.position.set(x, 2.3, -0.9);
-      stall.add(post);
-    }
-    for (let i = 0; i < 6; i++) {
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.15, 3), new THREE.MeshLambertMaterial({ color: i % 2 ? 0xffffff : 0xe85d5d }));
-      stripe.position.set(-2.75 + i * 1.1, 4.7, 0);
-      stripe.rotation.x = 0.25;
-      stripe.castShadow = true;
-      stall.add(stripe);
-    }
-    const crates = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 1.2), new THREE.MeshLambertMaterial({ color: 0xc9a27e }));
-    crates.position.set(3.8, 0.45, 0.8);
-    stall.add(crates);
-    stall.rotation.y = -Math.PI / 4;
-    g.add(stall);
+      // Market stall (sell items, buy paint).
+      const S = PLAZA.stall;
+      const stall = new THREE.Group();
+      stall.position.set(S.x, 0, S.z);
+      const counter = new THREE.Mesh(new THREE.BoxGeometry(6, 1.8, 2.2), new THREE.MeshLambertMaterial({ color: 0xa8774a }));
+      counter.position.y = 0.9;
+      counter.castShadow = true;
+      stall.add(counter);
+      for (const x of [-2.8, 2.8]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.6, 0.3), new THREE.MeshLambertMaterial({ color: 0x7a5233 }));
+        post.position.set(x, 2.3, -0.9);
+        stall.add(post);
+      }
+      for (let i = 0; i < 6; i++) {
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.15, 3), new THREE.MeshLambertMaterial({ color: i % 2 ? 0xffffff : 0xe85d5d }));
+        stripe.position.set(-2.75 + i * 1.1, 4.7, 0);
+        stripe.rotation.x = 0.25;
+        stripe.castShadow = true;
+        stall.add(stripe);
+      }
+      const crates = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.9, 1.2), new THREE.MeshLambertMaterial({ color: 0xc9a27e }));
+      crates.position.set(3.8, 0.45, 0.8);
+      stall.add(crates);
+      stall.rotation.y = -Math.PI / 4;
+      g.add(stall);
 
-    // Notice board (daily quests).
-    const B = PLAZA.board;
-    const board = new THREE.Group();
-    board.position.set(B.x, 0, B.z);
-    for (const x of [-1.8, 1.8]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4, 0.3), new THREE.MeshLambertMaterial({ color: 0x7a5233 }));
-      post.position.set(x, 2, 0);
-      board.add(post);
+      // Notice board (daily quests).
+      const B = PLAZA.board;
+      const board = new THREE.Group();
+      board.position.set(B.x, 0, B.z);
+      for (const x of [-1.8, 1.8]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4, 0.3), new THREE.MeshLambertMaterial({ color: 0x7a5233 }));
+        post.position.set(x, 2, 0);
+        board.add(post);
+      }
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(4.2, 2.4, 0.25), new THREE.MeshLambertMaterial({ color: 0xa8774a }));
+      panel.position.y = 2.8;
+      panel.castShadow = true;
+      board.add(panel);
+      [[-1.1, 3.2, 0xfff6d8], [0.6, 3.0, 0xffe1e1], [-0.2, 2.2, 0xe1f3ff], [1.3, 2.3, 0xfff6d8]].forEach(([x, y, c]) => {
+        const paper = new THREE.Mesh(new THREE.BoxGeometry(1, 0.8, 0.05), new THREE.MeshLambertMaterial({ color: c }));
+        paper.position.set(x, y, 0.15);
+        paper.rotation.z = (x * 7) % 0.2;
+        board.add(paper);
+      });
+      board.rotation.y = Math.PI / 4;
+      g.add(board);
     }
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(4.2, 2.4, 0.25), new THREE.MeshLambertMaterial({ color: 0xa8774a }));
-    panel.position.y = 2.8;
-    panel.castShadow = true;
-    board.add(panel);
-    [[-1.1, 3.2, 0xfff6d8], [0.6, 3.0, 0xffe1e1], [-0.2, 2.2, 0xe1f3ff], [1.3, 2.3, 0xfff6d8]].forEach(([x, y, c]) => {
-      const paper = new THREE.Mesh(new THREE.BoxGeometry(1, 0.8, 0.05), new THREE.MeshLambertMaterial({ color: c }));
-      paper.position.set(x, y, 0.15);
-      paper.rotation.z = (x * 7) % 0.2;
-      board.add(paper);
-    });
-    board.rotation.y = Math.PI / 4;
-    g.add(board);
 
     // Benches around the fountain.
     const benchGeo = M.benchGeometry();
@@ -366,34 +371,36 @@ export class World {
       b.castShadow = true;
       g.add(b);
     }
-    // Grocer: a market stall with crates of vegetables (seeds, milk, eggs, cheese).
-    const G = PLAZA.grocer;
-    const grocer = new THREE.Group();
-    grocer.position.set(G.x, 0, G.z);
-    const gc = new THREE.Mesh(new THREE.BoxGeometry(6, 1.6, 2.2), new THREE.MeshLambertMaterial({ color: 0x8fbf6a }));
-    gc.position.y = 0.8;
-    gc.castShadow = true;
-    grocer.add(gc);
-    for (const x of [-2.8, 2.8]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.4, 0.3), new THREE.MeshLambertMaterial({ color: 0x7a5233 }));
-      post.position.set(x, 2.2, 0.9);
-      grocer.add(post);
+    if (GAME) {
+      // Grocer: a market stall with crates of vegetables (seeds, milk, eggs, cheese).
+      const G = PLAZA.grocer;
+      const grocer = new THREE.Group();
+      grocer.position.set(G.x, 0, G.z);
+      const gc = new THREE.Mesh(new THREE.BoxGeometry(6, 1.6, 2.2), new THREE.MeshLambertMaterial({ color: 0x8fbf6a }));
+      gc.position.y = 0.8;
+      gc.castShadow = true;
+      grocer.add(gc);
+      for (const x of [-2.8, 2.8]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.4, 0.3), new THREE.MeshLambertMaterial({ color: 0x7a5233 }));
+        post.position.set(x, 2.2, 0.9);
+        grocer.add(post);
+      }
+      for (let i = 0; i < 6; i++) {
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.15, 3), new THREE.MeshLambertMaterial({ color: i % 2 ? 0xffffff : 0x3f9a5a }));
+        stripe.position.set(-2.75 + i * 1.1, 4.5, 0);
+        stripe.rotation.x = -0.25;
+        stripe.castShadow = true;
+        grocer.add(stripe);
+      }
+      [[0xf08a24, -1.8], [0xe03b2f, 0], [0xe6c35c, 1.8]].forEach(([col, x]) => {
+        const crate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 1.2), new THREE.MeshLambertMaterial({ color: 0xa8774a }));
+        crate.position.set(x, 1.85, 0);
+        const veg = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 0).scale(1.2, 0.5, 1), new THREE.MeshLambertMaterial({ color: col, flatShading: true }));
+        veg.position.set(x, 2.2, 0);
+        grocer.add(crate, veg);
+      });
+      g.add(grocer);
     }
-    for (let i = 0; i < 6; i++) {
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.15, 3), new THREE.MeshLambertMaterial({ color: i % 2 ? 0xffffff : 0x3f9a5a }));
-      stripe.position.set(-2.75 + i * 1.1, 4.5, 0);
-      stripe.rotation.x = -0.25;
-      stripe.castShadow = true;
-      grocer.add(stripe);
-    }
-    [[0xf08a24, -1.8], [0xe03b2f, 0], [0xe6c35c, 1.8]].forEach(([col, x]) => {
-      const crate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 1.2), new THREE.MeshLambertMaterial({ color: 0xa8774a }));
-      crate.position.set(x, 1.85, 0);
-      const veg = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 0).scale(1.2, 0.5, 1), new THREE.MeshLambertMaterial({ color: col, flatShading: true }));
-      veg.position.set(x, 2.2, 0);
-      grocer.add(crate, veg);
-    });
-    g.add(grocer);
 
     // Car showroom: glass-fronted building with cars on display.
     const S2 = PLAZA.showroom;
@@ -426,6 +433,12 @@ export class World {
       show.add(car);
     });
     g.add(show);
+
+    // Houses-only mode: places to hang out instead of the game stalls.
+    if (!GAME) {
+      this.venues = buildVenues();
+      g.add(this.venues.group);
+    }
 
     this.plaza = g;
     this.scene.add(g);
@@ -488,6 +501,8 @@ export class World {
       this.#applyNight();
     }
     this.lamp.material.color.setHSL(0.12, 1, 0.55 + Math.sin(t * 2) * 0.08);
+    // Town goal: the golden fountain.
+    this.fountainWater.material.color.setHex(this.goldFountain ? 0xf2c94c : 0x5bbbe8);
     if (this.marker.visible) this.marker.position.y = 12 + Math.sin(t * 3) * 0.6;
     this.lantern.position.set(px, 5, pz);
     this.lantern.intensity = night * 60;
@@ -511,6 +526,7 @@ export class World {
     if (this.dirtyHouses) this.#rebuildHouses();
     if (this.dirtyNodes) this.#rebuildNodes();
     this.#animate(t, dt, px, pz);
+    this.venues?.update(t, dt, this.swingSeat);
   }
 
   async #fetchBlock(b) {
@@ -605,7 +621,7 @@ export class World {
         const full = this.overrides.has(h0.id) ? { ...h0, ...this.overrides.get(h0.id) } : h0;
         // Houses-only mode still shows upgrades (earned with house points).
         // Houses-only mode still shows upgrades and each house's own colours.
-        const h = GAME ? full : { id: full.id, u: full.u, lit: full.lit, t: full.t, p: full.p };
+        const h = GAME ? full : { id: full.id, u: full.u, lit: full.lit, t: full.t, p: full.p, c: full.c };
         if (h.mv) continue; // moved in with someone: this plot stands empty
         const p = housePosition(h.id);
         const seed = hash(h.id);
@@ -909,6 +925,14 @@ export class World {
 
   // ---------- collision ----------
   blocked(x, z) {
+    if (this.interior) {
+      const b = this.interior.bounds;
+      const lx = x - INTERIOR_ORIGIN.x;
+      const lz = z - INTERIOR_ORIGIN.z;
+      const inDoorway = Math.abs(lx) < 1.1 && lz > b.maxZ - 0.5;
+      if (!inDoorway && (lx < b.minX || lx > b.maxX || lz < b.minZ || lz > b.maxZ)) return true;
+      return this.interior.furniture.some((f) => Math.abs(lx - f.x) < f.hw && Math.abs(lz - f.z) < f.hd);
+    }
     const [gx, gz] = worldToGrid(x, z);
     const b = gridToBlock(gx, gz);
     if (b < 0) {
@@ -916,7 +940,15 @@ export class World {
       if (Math.hypot(x, z) < 10.4) return true;
       const P = PLAZA.pond;
       if (Math.hypot(x - P.x, z - P.z) < P.r + 0.5) return true;
-      for (const s of [PLAZA.workbench, PLAZA.stall, PLAZA.board, PLAZA.grocer]) if (Math.abs(x - s.x) < 3 && Math.abs(z - s.z) < 3) return true;
+      if (GAME) {
+        for (const s of [PLAZA.workbench, PLAZA.stall, PLAZA.board, PLAZA.grocer]) if (Math.abs(x - s.x) < 3 && Math.abs(z - s.z) < 3) return true;
+      } else {
+        const { cafe, hall, wheel, playground } = VENUES;
+        if (Math.hypot(x - wheel.x, z - wheel.z) < wheel.r) return true; // wheel base
+        if (Math.abs(x - cafe.x) < 3.2 && Math.abs(z - (cafe.z - cafe.hd + 1)) < 0.9) return true; // café counter
+        if (Math.abs(x - hall.x) < hall.hw - 0.5 && Math.abs(z - (hall.z - hall.hd + 1.6)) < 1.5) return true; // stage
+        if (Math.hypot(x - (playground.x + 3), z - playground.z) < 1.1) return true; // dice table
+      }
       const S = PLAZA.showroom;
       if (Math.abs(x - S.x) < S.hw && Math.abs(z - S.z) < S.hd) return true;
       return this.#nodeBlocks(plazaNodes(), x, z);
@@ -971,6 +1003,7 @@ export class World {
     }
     for (const st of this.styles) targets.push(st.walls, st.roof);
     targets.push(this.beds, this.plants, this.fruits);
+    if (this.interior) targets.unshift(this.interior.group);
     targets.push(this.plaza);
     const hits = this.raycaster.intersectObjects(targets, true);
     for (const hit of hits) {
@@ -998,9 +1031,22 @@ export class World {
         }
         if (best) return { bed: best };
       }
+      // Venue things: a seat, the dice table, a wheel cabin.
+      for (let o = obj; o; o = o.parent) {
+        if (o.userData?.seat) return { seat: o.userData.seat };
+        if (o.userData?.dice) return { dice: true };
+        if (o.userData?.ride) return { ride: true };
+      }
       // Plaza stations by proximity of the hit point.
       const p = hit.point;
+      if (!GAME) {
+        for (const [name, v] of Object.entries(VENUES)) {
+          const r = name === 'wheel' ? 9 : Math.max(v.hw, v.hd) + 1;
+          if (Math.hypot(p.x - v.x, p.z - v.z) < r) return { station: name, at: v };
+        }
+      }
       for (const [name, s] of Object.entries(PLAZA)) {
+        if (!GAME && ['workbench', 'stall', 'board', 'grocer'].includes(name)) continue;
         const r = name === 'pond' ? s.r + 1 : name === 'showroom' ? s.hw + 1 : 4.5;
         if (Math.hypot(p.x - s.x, p.z - s.z) < r) return { station: name, at: s };
       }
@@ -1051,6 +1097,28 @@ export class World {
     const meshes = this.styles.flatMap((st) => [st.walls, st.roof]);
     this.hidden = this.occluder.intersectObjects(meshes, false).length > 0;
     return this.hidden;
+  }
+
+  // ---------- house interiors ----------
+  enterInterior(houseId, tier, paint) {
+    this.exitInterior();
+    const wall = colorOf('wall', lookFor(houseId, paint).wall);
+    this.interior = buildInterior(tier || 1, wall, houseId);
+    this.interior.house = houseId;
+    this.scene.add(this.interior.group);
+    this.ground.visible = false; // the room brings its own garden
+    return this.interior;
+  }
+
+  exitInterior() {
+    if (!this.interior) return;
+    this.scene.remove(this.interior.group);
+    this.ground.visible = true;
+    this.interior.group.traverse((o) => {
+      o.geometry?.dispose();
+      o.material?.dispose?.();
+    });
+    this.interior = null;
   }
 
   render(playerGroup) {

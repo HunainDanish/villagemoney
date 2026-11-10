@@ -3,6 +3,9 @@
 // (add friend, rival, move in, gift, raid). main.js passes in its helpers.
 
 import { ITEMS, cropReadyAt, energyNow, raidProblem, resolveRaid, initialState } from '../shared/game.js';
+import { GAME } from '../shared/features.js';
+import { CAR_TIER } from '../shared/life.js';
+import { HOUSE_TIERS } from '../shared/game.js';
 import {
   CROPS, GROCER, COOKBOOK, SNACKS, JOBS, LOCKS, GUARD_DOG, ALARM, CARS, RAID, ENERGY_MAX,
   defenceScore, raidChance,
@@ -199,7 +202,37 @@ export function createLifeUI(ctx) {
   }
 
   // ---------- showroom & garage ----------
+  // Houses-only mode: cars are free and unlock with your house level.
+  function openLiteShowroom() {
+    openSheet('Car showroom', (el) => {
+      const st = s();
+      const tier = st.tier || 1;
+      el.innerHTML = `<p>Cars are free: each house upgrade unlocks a better one. Your car parks in your driveway, and 🚗 in the bar lets you drive.</p>${Object.entries(CARS)
+        .map(([k, c]) => {
+          const need = CAR_TIER[k];
+          const open = tier >= need;
+          const mine = st.car === k;
+          return `<div class="row"><span class="ico" style="color:#${c.color.toString(16).padStart(6, '0')}">🚗</span><div class="grow"><b>${c.name}</b><small>Top speed ${c.speed}${open ? '' : ` · 🔒 unlocks with ${HOUSE_TIERS[need - 1].name}`}</small></div>${mine ? '<small>✓ yours</small>' : `<button class="btn ${open ? 'good' : ''}" data-claim="${k}" ${open ? '' : 'disabled'}>${st.cars?.includes(k) ? 'Use' : 'Take it'}</button>`}</div>`;
+        })
+        .join('')}`;
+      el.querySelectorAll('[data-claim]').forEach((b) =>
+        (b.onclick = async () => {
+          if (!me()) return ui.toast('Get your own house first (🔑 Sign in) to keep a car');
+          const r = await act({ a: 'claimCar', model: b.dataset.claim });
+          if (r.ok) {
+            sfx.level();
+            ui.celebrate(`🚗 Your ${CARS[b.dataset.claim].name} is parked at your house. Tap 🚗 to drive!`);
+            ctx.syncOwnHouse();
+            ctx.renderDrive();
+            openLiteShowroom();
+          }
+        }),
+      );
+    });
+  }
+
   function openShowroom() {
+    if (!GAME) return openLiteShowroom();
     openSheet('Car showroom', (el) => {
       const st = s();
       el.innerHTML = `<p>🪙 ${fmt.format(st.coins)} · Your car parks in your driveway, and you can drive it around town (🚗 in the bar).</p>${Object.entries(CARS)
