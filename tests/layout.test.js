@@ -37,3 +37,37 @@ test('usernames are normalized to Instagram rules', () => {
   assert.equal(normalizeUsername('x'.repeat(31)), null);
   assert.equal(normalizeUsername(42), null);
 });
+
+import { gridToBlock, blockGrid, firstHouseOfBlock, lastHouseOfBlock, houseAt, districtOf, worldToGrid, cellKind } from '../shared/layout.js';
+
+test('two districts of exactly 250 homes each, then the spiral', () => {
+  const count = [0, 0];
+  for (let id = 1; id <= 500; id++) {
+    const { x, z } = housePosition(id);
+    const [gx] = worldToGrid(x, z);
+    const d = districtOf(id);
+    count[d]++;
+    assert.equal(gx, d === 0 ? -1 : 1, `house ${id} is in its district`);
+  }
+  assert.deepEqual(count, [250, 250]);
+  assert.equal(districtOf(501), -1);
+  const [gx] = worldToGrid(housePosition(501).x, housePosition(501).z);
+  assert.ok(Math.abs(gx) >= 2 || cellKind(gx, 0) === 'block');
+});
+
+test('blocks and grid cells map both ways; the middle strip is kept free', () => {
+  for (let b = 0; b < 3000; b++) {
+    const [gx, gz] = blockGrid(b);
+    assert.equal(gridToBlock(gx, gz), b, `block ${b}`);
+    assert.equal(cellKind(gx, gz), 'block');
+    assert.ok(houseAt(b, 0) === firstHouseOfBlock(b));
+    for (let id = firstHouseOfBlock(b); id <= lastHouseOfBlock(b); id++) assert.equal(blockOfHouse(id), b);
+  }
+  assert.equal(gridToBlock(0, 0), -1);
+  assert.equal(gridToBlock(0, 1), -2);
+  assert.equal(gridToBlock(0, -1), -3);
+  assert.equal(lastHouseOfBlock(3), 250);
+  assert.equal(houseAt(3, 58), null);
+  assert.equal(firstHouseOfBlock(4), 251);
+  assert.equal(firstHouseOfBlock(8), 501);
+});

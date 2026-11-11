@@ -1,3 +1,6 @@
+import * as THREE from 'three';
+import { makeDish } from './food.js';
+
 // Hanging out at the plaza venues: sit on café chairs, hall benches and
 // swings; order from the café menu; cheers; take photos; roll the dice; ride
 // the Ferris wheel. Things others should see go out as reactions (bubbles).
@@ -6,12 +9,13 @@ const FOODS = [
   ['🍝', 'Pasta'], ['🍣', 'Sushi'], ['🍔', 'Burger'], ['🍰', 'Strawberry cake'], ['🍹', 'Berry mocktail'], ['🧃', 'Fresh juice'], ['☕', 'Coffee'],
 ];
 // How high the character's feet sit so the hips land on the seat.
-const SEAT_Y = { cafe: 1.0, hall: 1.0, swing: 1.3, sofa: 0.75 };
+const SEAT_Y = { cafe: 1.0, hall: 1.0, swing: 1.3, sofa: 0.75, bench: 1.1 };
 
 export class Hangout {
   constructor({ world, player, net, ui, sfx, particles, react, openSheet, closeSheet, bar }) {
     Object.assign(this, { world, player, net, ui, sfx, particles, react, openSheet, closeSheet, bar });
     this.riding = null;
+    this.dishes = []; // { mesh, born, life }
     player.onStand = () => this.#standUp();
   }
 
@@ -66,6 +70,7 @@ export class Hangout {
       hall: [['clap', '👏 Clap'], ['photo', '📸 Photo'], ['stand', 'Stand up']],
       swing: [['photo', '📸 Photo'], ['stand', 'Get off']],
       sofa: [['photo', '📸 Photo'], ['stand', 'Stand up']],
+      bench: [['photo', '📸 Photo'], ['stand', 'Stand up']],
       room: [['photo', '📸 Photo'], ['leave', '🚪 Leave house']],
       ride: [['photo', '📸 Photo'], ['off', 'Get off']],
     }[kind];
@@ -98,11 +103,60 @@ export class Hangout {
           const [icon, name] = FOODS[Number(b.dataset.f)];
           this.closeSheet();
           this.react(`f${b.dataset.f}`);
+          this.serve(this.player.seat, Number(b.dataset.f));
           this.sfx.pickup();
           this.ui.toast(`${icon} Enjoy your ${name.toLowerCase()}!`);
         }),
       );
     });
+  }
+
+  // ---------- food on the table ----------
+  // A real little dish pops up on the table, in front of whoever ordered.
+  serve(seat, i) {
+    const t = seat?.table;
+    if (!t) return;
+    // Same spot again (a second order): replace what was there.
+    const toward = Math.atan2(seat.x - t.x, seat.z - t.z);
+    const x = t.x + Math.sin(toward) * 0.38;
+    const z = t.z + Math.cos(toward) * 0.38;
+    for (const d of this.dishes) if (Math.hypot(d.mesh.position.x - x, d.mesh.position.z - z) < 0.2) d.life = 0;
+    const mesh = makeDish(i);
+    mesh.position.set(x, t.y, z);
+    mesh.rotation.y = toward;
+    mesh.scale.setScalar(0.01);
+    this.world.scene.add(mesh);
+    this.dishes.push({ mesh, born: 0, life: 120 });
+    this.particles.burst(x, t.y + 0.3, z, { n: 10, colors: [0xffffff, 0xffd166], size: 0.18, speed: 2, up: 2, life: 0.6, gravity: 4, spin: 2 });
+  }
+
+  // Someone else ordered (their reaction arrived): serve it at their table.
+  serveNear(x, z, i) {
+    const seat = this.world.venues?.seats?.filter((s) => s.table).reduce((best, s) => {
+      const d = Math.hypot(s.x - x, s.z - z);
+      return d < 1.6 && (!best || d < best.d) ? { s, d } : best;
+    }, null)?.s;
+    if (seat) this.serve(seat, i);
+  }
+
+  #updateDishes(dt) {
+    for (const d of this.dishes) {
+      d.born += dt;
+      d.life -= dt;
+      // Pop in with a little overshoot, shrink away at the end.
+      const k = Math.min(1, d.born / 0.45);
+      const pop = k < 1 ? k + Math.sin(k * Math.PI) * 0.3 : 1;
+      const s = Math.max(0.01, Math.min(pop, d.life / 0.5));
+      d.mesh.scale.setScalar(s * 1.35);
+      if (d.life <= 0) {
+        this.world.scene.remove(d.mesh);
+        d.mesh.traverse((o) => {
+          o.geometry?.dispose();
+          o.material?.dispose?.();
+        });
+      }
+    }
+    this.dishes = this.dishes.filter((d) => d.life > 0);
   }
 
   // ---------- photos ----------
@@ -140,6 +194,7 @@ export class Hangout {
       this.player.leaveSeat();
       this.riding = { cabin: v.lowestCabin(), t: 0 };
       this.player.riding = true;
+      document.body.classList.add('riding');
       this.player.char.play('ride');
       this.sfx.level();
       this.ui.toast('🎡 Enjoy the view! The ride takes about 40 seconds.');
@@ -152,6 +207,7 @@ export class Hangout {
     const v = this.world.venues;
     this.riding = null;
     this.player.riding = false;
+    document.body.classList.remove('riding');
     this.player.pos.y = 0;
     this.player.char.stop();
     this.bar.hidden = true;
@@ -160,6 +216,7 @@ export class Hangout {
   }
 
   update(dt) {
+    this.#updateDishes(dt);
     // Walked out through the door.
     const room = this.world.interior;
     if (room && this.player.pos.z > room.exitZ) this.leaveHouse();

@@ -2,7 +2,7 @@
 // Demo mode kicks in automatically under `npm run dev` (Vite has no /api)
 // and on a deployment without database environment variables.
 
-import { HOUSES_PER_BLOCK, firstHouseOfBlock } from '../shared/layout.js';
+import { firstHouseOfBlock, lastHouseOfBlock } from '../shared/layout.js';
 import { GAME } from '../shared/features.js';
 
 const DEMO_HOUSES = 2600;
@@ -29,12 +29,13 @@ export async function loadConfig() {
 }
 
 export const isDemo = () => demo;
+export const demoBricks = [0, 0]; // villa bricks added in the demo
 
 export async function loadStats() {
   if (demo) {
     const latest = [];
     for (let id = DEMO_HOUSES; latest.length < 8; id--) if (id % 23) latest.push({ id, u: demoName(id) });
-    return { residents: DEMO_HOUSES, maxId: DEMO_HOUSES, latest };
+    return { residents: DEMO_HOUSES, maxId: DEMO_HOUSES, latest, villas: [12 + demoBricks[0], 40 + demoBricks[1]] };
   }
   return get('/api/stats');
 }
@@ -89,7 +90,7 @@ export function demoName(id) {
 function demoBlock(b) {
   const houses = [];
   const from = firstHouseOfBlock(b);
-  for (let id = from; id < from + HOUSES_PER_BLOCK && id <= DEMO_HOUSES; id++) {
+  for (let id = from; id <= lastHouseOfBlock(b) && id <= DEMO_HOUSES; id++) {
     const h = { id, u: id % 23 === 0 ? null : demoName(id), lit: id % 3 === 0 ? 1 : undefined }; // a few hidden, some porch lights on
     const t = id % 17 === 0 ? 5 : id % 11 === 0 ? 4 : id % 5 === 0 ? 3 : id % 3 === 0 ? 2 : 0;
     if (t && id !== 7) h.t = t; // house 7 is yours in the demo

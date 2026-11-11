@@ -1,8 +1,9 @@
 import { db, hasDb } from '../lib/db.js';
 import { json, cdn, errorJson } from '../lib/http.js';
-import { HOUSES_PER_BLOCK, firstHouseOfBlock } from '../shared/layout.js';
+import { firstHouseOfBlock, lastHouseOfBlock } from '../shared/layout.js';
 
-// GET /api/block?b=12 -> the (up to) 64 houses in block 12.
+// GET /api/block?b=12 -> the (up to) 64 houses in block 12 (the outer district
+// blocks hold fewer: see shared/layout.js).
 // A block is a primary-key range scan, and responses are CDN-cached, so the
 // cost per visitor stays flat no matter how big the town gets. Yard decor,
 // paint, garden, defences, job, car and housemates ride along here, so
@@ -13,7 +14,7 @@ export async function GET(request) {
   if (!Number.isInteger(b) || b < 0 || b > 1e7) return errorJson('Bad block number');
 
   const from = firstHouseOfBlock(b);
-  const to = from + HOUSES_PER_BLOCK;
+  const to = lastHouseOfBlock(b) + 1;
   const range = (q) => q.gte('id', from).lt('id', to).order('id');
   let { data, error } = await range(db().from('residents').select('id, username, hidden, look, last_active, home_id'));
   let social = true;
@@ -49,6 +50,6 @@ export async function GET(request) {
     if (mates[r.id]) h.m = mates[r.id];
     return h;
   });
-  const full = houses.length === HOUSES_PER_BLOCK;
+  const full = houses.length === to - from;
   return json({ b, houses }, { cache: cdn(full ? 60 : 15) });
 }

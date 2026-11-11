@@ -76,6 +76,7 @@ export function buildVenues() {
       chair.add(at(box(0.12, 0.9, 0.8, 0x2f7f86), side * 0.35, 0.5, 0));
       // Seat point: on the chair, facing the table.
       cafe.add(seat(chair, C.x + cx, C.z + tz, side > 0 ? -Math.PI / 2 : Math.PI / 2, 'cafe'));
+      chair.userData.seat.table = { x: C.x + tx, z: C.z + tz, y: 1.55 }; // table top (the plaza sits 0.3 up)
     }
   });
   group.add(cafe);

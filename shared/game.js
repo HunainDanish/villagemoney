@@ -598,6 +598,16 @@ export function applyAction(s, action, ctx) {
       return { ok: true, events };
     }
 
+    // A brick for one of the town's villas (the server adds it to the villa).
+    case 'villaBrick': {
+      if (action.villa !== 0 && action.villa !== 1) return fail('bad villa');
+      if ((s.points || 0) < 1) return fail('you need a house point: stay 15 minutes in town to earn one');
+      s.points -= 1;
+      s.counts.bricks = (s.counts.bricks || 0) + 1;
+      events.push({ type: 'brick', villa: action.villa });
+      return { ok: true, events };
+    }
+
     case 'pointUpgrade': {
       const next = (s.tier || 1) + 1;
       const cost = HOUSE_POINT_COST[next];

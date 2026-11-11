@@ -33,7 +33,7 @@ function exitToRoad(p, toward = p) {
       ? { walk: [], road: { x: nearestRoad(p.x), z: p.z, axis: 'v' } }
       : { walk: [], road: { x: p.x, z: nearestRoad(p.z), axis: 'h' } };
   }
-  // Plaza: step onto a clear walkway, then out through the edge facing the
+  // Plaza (and the parks / villa lot): step onto a clear walkway, then out through the edge facing the
   // destination (a straight line would hit the fountain or the stalls).
   if (plaza) {
     const C = PLAZA_CORRIDOR;
@@ -42,7 +42,8 @@ function exitToRoad(p, toward = p) {
       const sz = Math.sign(toward.z - p.z || 1);
       return { walk: [{ x, z: p.z }], road: { x, z: cz + sz * (PITCH / 2), axis: 'h' } };
     }
-    const z = cz + Math.sign(lz || 1) * C;
+    // The villas fill the south half of their lot: use the walkway north of them.
+    const z = cz + (gridToBlock(gx, gz) === -2 ? -C : Math.sign(lz || 1) * C);
     const sx = Math.sign(toward.x - p.x || 1);
     return { walk: [{ x: p.x, z }], road: { x: cx + sx * (PITCH / 2), z, axis: 'v' } };
   }

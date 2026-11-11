@@ -42,19 +42,94 @@ export function spiralIndex(x, z) {
   return p - 1;
 }
 
-// Block number (0-based, houses 1..64 are block 0) -> block grid coordinate.
-// Spiral index 0 is the plaza, so block b sits at spiral index b + 1.
-export const blockGrid = (b) => spiralCoord(b + 1);
-export const gridToBlock = (gx, gz) => spiralIndex(gx, gz) - 1; // -1 = plaza
+// ---------- the town centre: two districts around a middle strip ----------
+//
+//        x = -1         x = 0           x = 1
+// z=-1   West           North Park      East
+// z= 0   West           Plaza           East
+//        ======= Main Boulevard (straight, z = PITCH/2) =======
+// z= 1   West           Two villas      East
+// z= 2   West           South Park      East
+//
+// Houses 1-250 live in the West District, 251-500 in the East District (four
+// blocks each; the outer block holds 58). From house 501 the spiral carries on
+// around this centre, skipping its cells.
+export const DISTRICT_HOMES = 250;
+export const DISTRICTS = [
+  { name: 'West District', x: -1, first: 1 },
+  { name: 'East District', x: 1, first: DISTRICT_HOMES + 1 },
+];
+const DISTRICT_ROWS = [0, 1, -1, 2]; // fill order: nearest the boulevard first
+const BLOCKS_PER_DISTRICT = DISTRICT_ROWS.length; // 4 x 64 = 256 plots, 250 used
+const CENTRE_BLOCKS = DISTRICTS.length * BLOCKS_PER_DISTRICT; // 8
+const CENTRE_HOMES = DISTRICTS.length * DISTRICT_HOMES; // 500
+export const BOULEVARD_Z = PITCH / 2;
+export const SPECIAL_CELLS = { '0,0': 'plaza', '0,1': 'villas', '0,-1': 'park', '0,2': 'park' };
+const SPECIAL_CODE = { plaza: -1, villas: -2, park: -3 };
+// Every centre cell, as spiral indices (the spiral skips these).
+const RESERVED = [];
+for (const x of [-1, 0, 1]) for (const z of DISTRICT_ROWS) RESERVED.push(spiralIndex(x, z));
+RESERVED.sort((a, b) => a - b);
+const reservedBelow = (n) => RESERVED.filter((r) => r < n).length;
 
-export const blockOfHouse = (id) => Math.floor((id - 1) / HOUSES_PER_BLOCK);
-export const firstHouseOfBlock = (b) => b * HOUSES_PER_BLOCK + 1;
+// Block number (0-based) -> block grid coordinate.
+export function blockGrid(b) {
+  if (b < CENTRE_BLOCKS) {
+    const d = DISTRICTS[Math.floor(b / BLOCKS_PER_DISTRICT)];
+    return [d.x, DISTRICT_ROWS[b % BLOCKS_PER_DISTRICT]];
+  }
+  const rank = b - CENTRE_BLOCKS;
+  for (let n = rank; n <= rank + RESERVED.length + 1; n++) {
+    if (!RESERVED.includes(n) && n - reservedBelow(n) === rank) return spiralCoord(n);
+  }
+  throw new Error('bad block');
+}
+
+// Grid coordinate -> block number, or a negative code for the centre's
+// special cells (-1 plaza, -2 villas, -3 park).
+export function gridToBlock(gx, gz) {
+  const special = SPECIAL_CELLS[`${gx},${gz}`];
+  if (special) return SPECIAL_CODE[special];
+  const d = DISTRICTS.findIndex((dd) => dd.x === gx);
+  const row = DISTRICT_ROWS.indexOf(gz);
+  if (d >= 0 && row >= 0) return d * BLOCKS_PER_DISTRICT + row;
+  const n = spiralIndex(gx, gz);
+  return CENTRE_BLOCKS + n - reservedBelow(n);
+}
+export const cellKind = (gx, gz) => SPECIAL_CELLS[`${gx},${gz}`] || 'block';
+
+export function blockOfHouse(id) {
+  if (id <= CENTRE_HOMES) {
+    const d = Math.floor((id - 1) / DISTRICT_HOMES);
+    return d * BLOCKS_PER_DISTRICT + Math.floor((id - 1 - d * DISTRICT_HOMES) / HOUSES_PER_BLOCK);
+  }
+  return CENTRE_BLOCKS + Math.floor((id - CENTRE_HOMES - 1) / HOUSES_PER_BLOCK);
+}
+export function firstHouseOfBlock(b) {
+  if (b < CENTRE_BLOCKS) {
+    const d = Math.floor(b / BLOCKS_PER_DISTRICT);
+    return d * DISTRICT_HOMES + (b % BLOCKS_PER_DISTRICT) * HOUSES_PER_BLOCK + 1;
+  }
+  return CENTRE_HOMES + (b - CENTRE_BLOCKS) * HOUSES_PER_BLOCK + 1;
+}
+// Last house number in a block (the outer district blocks are not full).
+export function lastHouseOfBlock(b) {
+  const last = firstHouseOfBlock(b) + HOUSES_PER_BLOCK - 1;
+  if (b < CENTRE_BLOCKS) return Math.min(last, (Math.floor(b / BLOCKS_PER_DISTRICT) + 1) * DISTRICT_HOMES);
+  return last;
+}
+// Plot `slot` (0-63) of block b -> house number, or null for an unused plot.
+export function houseAt(b, slot) {
+  const id = firstHouseOfBlock(b) + slot;
+  return id <= lastHouseOfBlock(b) ? id : null;
+}
+// Which district a house is in (index into DISTRICTS), or -1 outside the centre.
+export const districtOf = (id) => (id >= 1 && id <= CENTRE_HOMES ? Math.floor((id - 1) / DISTRICT_HOMES) : -1);
 
 // House number -> world position {x, z, facing} (facing in radians).
 export function housePosition(id) {
-  const i = id - 1;
-  const b = Math.floor(i / HOUSES_PER_BLOCK);
-  const slot = i % HOUSES_PER_BLOCK;
+  const b = blockOfHouse(id);
+  const slot = id - firstHouseOfBlock(b);
   const [gx, gz] = blockGrid(b);
   const sx = slot % BLOCK_SIDE;
   const sz = Math.floor(slot / BLOCK_SIDE);
@@ -73,7 +148,8 @@ export const worldToGrid = (x, z) => [Math.round(x / PITCH), Math.round(z / PITC
 // Blocks within `radius` grid cells of a world position that already have houses.
 export function blocksNear(x, z, radius, totalHouses) {
   const [cx, cz] = worldToGrid(x, z);
-  const maxBlock = Math.ceil(totalHouses / HOUSES_PER_BLOCK) - 1;
+  if (totalHouses < 1) return [];
+  const maxBlock = blockOfHouse(totalHouses);
   const out = [];
   for (let dx = -radius; dx <= radius; dx++) {
     for (let dz = -radius; dz <= radius; dz++) {

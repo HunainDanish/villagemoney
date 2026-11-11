@@ -9,7 +9,7 @@ import { applyBatch, initialState } from '../shared/game.js';
 const KEY = 'pl_game_v1';
 const FLUSH_MS = 20000;
 const SERVER_DECIDES = new Set(['fish', 'dailyGift']); // random rewards: the server rolls
-const URGENT = new Set(['craft', 'place', 'sell', 'paint', 'claim', 'upgrade', 'setLook', 'claimCar', 'customize', 'pointUpgrade']);
+const URGENT = new Set(['craft', 'place', 'sell', 'paint', 'claim', 'upgrade', 'setLook', 'claimCar', 'customize', 'pointUpgrade', 'villaBrick']);
 
 function readLocal(key) {
   try {

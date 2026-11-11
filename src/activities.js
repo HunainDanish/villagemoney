@@ -49,6 +49,7 @@ export class Activities {
     if (hit.seat) return this.ui.sit?.(hit.seat);
     if (hit.dice) return this.player.walkTo(VENUES.playground.x + 3, VENUES.playground.z + 2, 1.2, () => this.ui.dice?.());
     if (hit.ride) return this.ui.ride?.();
+    if (hit.villa !== undefined) return this.ui.openVilla?.(hit.villa);
     if (!GAME) {
       // Just houses: trees and plaza stalls are scenery; walk over to them.
       if (hit.node) return this.player.walkTo(hit.node.x, hit.node.z, 2.5);

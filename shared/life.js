@@ -110,3 +110,14 @@ export const TOWN_GOALS = [
 ];
 export const nextGoal = (residents) => TOWN_GOALS.find((g) => residents < g.at) || null;
 export const reached = (residents, at) => residents >= at;
+
+// The two villas in the middle of town. Everyone builds them together: each
+// brick costs one house point, and enough bricks raise the villa a level
+// (it grows a wing, a pool, a tower, then a golden dome).
+export const VILLAS = [
+  { id: 0, name: 'Sunset Villa', colors: { wall: 0xffd8a8, roof: 0xd94141, door: 0x5a2d82 } },
+  { id: 1, name: 'Moonlight Villa', colors: { wall: 0xcfe0ff, roof: 0x2f4fa8, door: 0xd9a441 } },
+];
+export const VILLA_LEVELS = [0, 5, 15, 35, 70]; // bricks needed for levels 1-5
+export const villaLevel = (bricks) => VILLA_LEVELS.filter((n) => bricks >= n).length;
+export const nextVillaLevel = (bricks) => VILLA_LEVELS.find((n) => bricks < n) ?? null;

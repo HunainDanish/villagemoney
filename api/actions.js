@@ -1,4 +1,4 @@
-import { hasDb } from '../lib/db.js';
+import { db, hasDb } from '../lib/db.js';
 import { json, errorJson } from '../lib/http.js';
 import { currentResident } from '../lib/auth.js';
 import { applyForResident } from '../lib/progress.js';
@@ -24,6 +24,14 @@ export async function POST(request) {
   const actions = Array.isArray(body?.actions) ? body.actions.slice(0, 60) : [];
   try {
     const { state, results } = await applyForResident(resident, actions);
+    // Bricks for the town's villas (paid with house points above).
+    const bricks = [0, 0];
+    for (const r of results) for (const e of r.events || []) if (e.type === 'brick') bricks[e.villa]++;
+    for (const v of [0, 1]) {
+      if (!bricks[v]) continue;
+      const { error } = await db().rpc('villa_add', { p_villa: v, p_n: bricks[v] });
+      if (error) console.error('villa_add failed (run supabase/005_villas.sql)', error.message);
+    }
     return json({ state, results: results.map((r) => ({ ok: r.ok, reason: r.reason })) });
   } catch (e) {
     console.error('actions failed', e);

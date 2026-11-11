@@ -150,8 +150,9 @@ export function lotGeometry(size) {
   const g = new THREE.PlaneGeometry(size, size, 24, 24).rotateX(-Math.PI / 2);
   const pos = g.attributes.position;
   const col = new Float32Array(pos.count * 3);
-  const a = new THREE.Color(0x8fcf6a);
-  const b = new THREE.Color(0x76b856);
+  // Bright, toy-like grass (the board-game look).
+  const a = new THREE.Color(0x86d957);
+  const b = new THREE.Color(0x63c043);
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);

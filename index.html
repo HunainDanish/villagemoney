@@ -49,9 +49,21 @@
       <button class="round" id="react-btn" title="React"><span>😊</span><small>React</small></button>
       <button class="round" id="run-btn" title="Run"><span>🏃</span><small>Run</small></button>
       <button class="round" id="cam-btn" title="Camera"><span>🎥</span><small>View</small></button>
+      <button class="round" id="tour-btn" title="Town tour: walks you round on its own"><span>▶️</span><small>Tour</small></button>
     </div>
     <div id="react-menu" class="react-menu" hidden></div>
     <div id="seatbar" class="seatbar" hidden></div>
+    <div id="tourbar" class="navbar" hidden>
+      <div class="nav-main"><b class="tour-text"></b><small>Town tour · move to take over</small></div>
+      <button class="tour-stop" title="Stop the tour">⏹</button>
+    </div>
+    <!-- First-person view while seated: a smart-glasses style heads-up display. -->
+    <div id="glasses" hidden>
+      <div class="lens"></div>
+      <div class="g-status"><span id="g-time">--:--</span><span id="g-batt">🔋 --</span><span id="g-live">● Live</span></div>
+      <div class="g-place" id="g-place"></div>
+      <div class="g-hint">Drag to look around</div>
+    </div>
 
     <div id="prompt" class="prompt" hidden></div>
     <div id="celebrate" class="celebrate" hidden></div>

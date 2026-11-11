@@ -6,7 +6,7 @@ import { Net } from './net.js';
 import { Store } from './store.js';
 import { Activities } from './activities.js';
 import { Particles, sfx, isMuted, setMuted } from './fx.js';
-import { loadConfig, loadStats, loadMe, findHouse, send, isDemo } from './api.js';
+import { loadConfig, loadStats, loadMe, findHouse, send, isDemo, demoBricks } from './api.js';
 import { housePosition, blockOfHouse, normalizeUsername, PITCH } from '../shared/layout.js';
 import {
   ITEMS, RECIPES, SKILLS, WALL_PAINTS, ROOF_PAINTS, PAINT_PRICE, HOUSE_TIERS,
@@ -20,9 +20,12 @@ import { Joystick } from './joystick.js';
 import { Navigator, doorPoint } from './nav.js';
 import { REACTIONS, Bubbles } from './reactions.js';
 import { Hangout } from './hangout.js';
+import { Tour } from './tour.js';
 import { VENUES } from '../shared/nodes.js';
 import { Music } from './music.js';
-import { nextGoal, reached } from '../shared/life.js';
+import { nextGoal, reached, VILLAS, villaLevel, nextVillaLevel } from '../shared/life.js';
+import { villaDoor, BOULEVARD } from './centre.js';
+import { DISTRICTS, districtOf } from '../shared/layout.js';
 import { SKIN, HAIR, HAIR_STYLES, SHIRTS, PANTS, HATS, FREE_SHIRTS, FREE_HATS, defaultAvatar, giftName } from '../shared/look.js';
 import { GAME } from '../shared/features.js';
 import { PALETTES, PREMIUM, PREMIUM_TIER, PART_UNLOCK, PART_NAMES, STARTER_STYLES, lookFor, paletteFor } from '../shared/style.js';
@@ -697,7 +700,11 @@ function directionsToHouse(id, name) {
 }
 
 const bubbles = new Bubbles($('labels'), world.camera);
-net.onReact = (object, key) => bubbles.show(object, key, player.vehicle ? 3 : 4.6);
+net.onReact = (object, key) => {
+  bubbles.show(object, key, player.vehicle ? 3 : 4.6);
+  // A café order from someone else: their dish appears on their table too.
+  if (/^f\d$/.test(key)) hangout.serveNear(object.position.x, object.position.z, Number(key[1]));
+};
 function react(key) {
   $('react-menu').hidden = true;
   const anim = REACTIONS.find((r) => r.k === key)?.anim;
@@ -713,13 +720,40 @@ $('run-btn').onclick = () => {
   player.runToggle = !player.runToggle;
   $('run-btn').classList.toggle('on', player.runToggle);
 };
+const CAM_NAMES = { street: ['Street', '🎥 Street view'], close: ['Close', '🎥 Close-up: locked behind you'], high: ['Above', '🎥 View from above'] };
 function renderCam() {
-  $('cam-btn').querySelector('small').textContent = player.camMode === 'street' ? 'Street' : 'Above';
+  $('cam-btn').querySelector('small').textContent = CAM_NAMES[player.camMode][0];
+  document.body.classList.toggle('cam-high', player.camMode === 'high');
 }
 $('cam-btn').onclick = () => {
   player.toggleCamera();
   renderCam();
-  ui.toast(player.camMode === 'street' ? '🎥 Street view' : '🎥 View from above');
+  ui.toast(CAM_NAMES[player.camMode][1]);
+};
+
+// Sitting down: first person through smart-glasses style lenses; the regular
+// UI steps aside (only the seat buttons stay).
+const SEAT_PLACES = { cafe: '☕ Café', hall: '🏛️ Town hall', swing: '🛝 Playground', sofa: '🛋️ Inside', bench: '🌳 Park bench' };
+let battery = null;
+navigator.getBattery?.().then((b) => (battery = b)).catch(() => {});
+function renderGlasses() {
+  if ($('glasses').hidden) return;
+  const d = new Date();
+  $('g-time').textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  $('g-batt').textContent = battery ? `🔋 ${Math.round(battery.level * 100)}%${battery.charging ? '⚡' : ''}` : '🔋 OK';
+  $('g-batt').hidden = false;
+  const near = net.peers?.size || 0;
+  $('g-live').textContent = `● Live · ${near} nearby`;
+  $('g-place').textContent = SEAT_PLACES[player.seat?.kind] || '';
+}
+setInterval(renderGlasses, 1000);
+player.onView = (fp) => {
+  document.body.classList.toggle('fp', fp);
+  $('glasses').hidden = !fp;
+  if (fp) {
+    $('react-menu').hidden = true;
+    renderGlasses();
+  }
 };
 renderCam();
 
@@ -729,6 +763,11 @@ function openPlaces() {
   const places = [
     ...(me ? [{ icon: '🏠', name: 'your house', ...doorPoint(me.home_id || me.id), house: me.home_id || me.id }] : []),
     { icon: '⛲', name: 'the plaza fountain', x: 0, z: 14 },
+    { icon: '🛣️', name: 'Main Boulevard', x: 0, z: BOULEVARD.z },
+    ...VILLAS.map((v, i) => ({ icon: i ? '🌙' : '🌅', name: v.name, ...villaDoor(i, world.centre.villas[i].level) })),
+    { icon: '🌳', name: 'North Park', x: 0, z: -PITCH + 20 },
+    { icon: '🌳', name: 'South Park', x: 0, z: 2 * PITCH - 20 },
+    ...DISTRICTS.map((d) => ({ icon: '🏘️', name: d.name, x: d.x * PITCH * 0.5, z: BOULEVARD.z })),
     { icon: '🎣', name: 'the pond', x: PLAZA.pond.x + 13, z: PLAZA.pond.z },
     { icon: '🚗', name: 'the car showroom', x: PLAZA.showroom.x, z: PLAZA.showroom.z - PLAZA.showroom.hd - 3 },
     { icon: '🏪', name: 'the market stall', x: PLAZA.stall.x - 4, z: PLAZA.stall.z - 4 },
@@ -777,6 +816,25 @@ const hangout = new Hangout({ world, player, net, ui, sfx, particles, react, ope
 ui.sit = (seat) => hangout.sit(seat);
 ui.dice = () => hangout.rollDice();
 ui.ride = () => hangout.ride();
+ui.openVilla = (i) => openVilla(i);
+
+// ▶ Tour: an automatic walk through the centre along Main Boulevard.
+const tour = new Tour({
+  player,
+  nav,
+  bar: $('tourbar'),
+  onEnd: (done) => {
+    $('tour-btn').querySelector('span').textContent = '▶️';
+    if (done) ui.celebrate('🧭 Tour complete! Welcome to town.');
+  },
+});
+$('tour-btn').onclick = () => {
+  if (tour.active) return tour.stop();
+  hangout.leaveHouse();
+  hangout.stopRide(true);
+  tour.start();
+  $('tour-btn').querySelector('span').textContent = '⏹️';
+};
 ui.openPlace = (name) => {
   const tips = {
     cafe: '☕ Tap a chair to sit, then order from the menu',
@@ -786,6 +844,52 @@ ui.openPlace = (name) => {
   if (name === 'wheel') return hangout.ride();
   if (tips[name]) ui.toast(tips[name]);
 };
+
+// ---------- the two villas: everyone builds them together ----------
+function applyVillas() {
+  townStats.villas.forEach((bricks, i) => {
+    if (world.centre.setVillaLevel(i, villaLevel(bricks))) {
+      const v = world.centre.villas[i];
+      ui.celebrate(`🏛️ ${v.name} reached level ${v.level}!`);
+      particles.burst(v.x, 12, v.z, { n: 60, colors: [0xf2c94c, 0xffffff], size: 0.5, speed: 10, up: 3, life: 1.8, gravity: 4, spin: 3 });
+      sfx.level();
+    }
+  });
+}
+
+function openVilla(i) {
+  const v = world.centre.villas[i];
+  openSheet(v.name, (el) => {
+    const bricks = townStats.villas[i] || 0;
+    const level = villaLevel(bricks);
+    const next = nextVillaLevel(bricks);
+    const pts = store.state.points || 0;
+    const perks = ['', 'A grand two-storey villa', 'Side wings', 'A pool and garden hedges', 'A lookout tower', 'A golden dome: the finished villa'];
+    el.innerHTML = `
+      <p>Everyone in town builds the villas together. Each <b>🧱 brick</b> costs <b>1 house point</b> (earn one for every 15 minutes in town).</p>
+      <div class="row"><span class="ico">🏛️</span><div class="grow"><b>Level ${level} of 5</b><small>${perks[level]}</small>
+        <small>${next ? `🧱 ${fmt.format(bricks)}/${fmt.format(next)} bricks to level ${level + 1}: ${perks[level + 1].toLowerCase()}` : '🏆 Fully built!'}</small></div></div>
+      <div class="stack">
+        <button class="btn primary" id="v-brick" ${next ? '' : 'disabled'}>🧱 Add a brick (you have ${pts} 🏠)</button>
+        <button class="btn" id="v-go">🧭 Walk to the villa</button>
+      </div>`;
+    el.querySelector('#v-go').onclick = () => {
+      closeSheet();
+      directionsTo({ name: v.name, ...villaDoor(i, v.level) });
+    };
+    el.querySelector('#v-brick').onclick = async () => {
+      if (!me && !isDemo()) return openSignIn();
+      const r = await act({ a: 'villaBrick', villa: i });
+      if (!r.ok) return;
+      townStats.villas[i] = (townStats.villas[i] || 0) + 1;
+      if (isDemo()) demoBricks[i]++;
+      sfx.pickup();
+      particles.burst(v.x, 8, v.z - 6, { n: 16, colors: [0xd9714e, 0xf2c94c], size: 0.4, speed: 5, up: 3, life: 1, gravity: 8, spin: 2 });
+      applyVillas();
+      rerender();
+    };
+  });
+}
 
 // ---------- town life: new neighbours, online + join, goals, music ----------
 function openNeighbours() {
@@ -986,11 +1090,12 @@ store.on((state, events) => {
   rerender();
 });
 
-let townStats = { residents: 0, latest: [] };
+let townStats = { residents: 0, latest: [], villas: [0, 0] };
 async function refreshStats() {
   try {
     const s = await loadStats();
-    townStats = { residents: s.residents, latest: s.latest || [] };
+    townStats = { residents: s.residents, latest: s.latest || [], villas: s.villas || [0, 0] };
+    applyVillas();
     world.setTotal(s.maxId);
     const goal = nextGoal(s.residents);
     $('count').textContent = goal
@@ -1074,6 +1179,7 @@ function frame(now) {
   hangout.update(dt);
   townGoals(now);
   nav.update(t);
+  tour.update();
   bubbles.update();
   net.update(player, dt, now);
   particles.update(dt);
@@ -1089,4 +1195,4 @@ requestAnimationFrame(frame);
 boot();
 
 // Expose a tiny debug handle in development only.
-if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, VENUES, life, nav, net, react, hangout, openPlaces, openSignIn, openPassword, setMe: (m) => (me = m) };
+if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, VENUES, life, nav, net, react, hangout, tour, openPlaces, openSignIn, openPassword, setMe: (m) => (me = m) };

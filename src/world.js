@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   BLOCK_SIDE, HOUSES_PER_BLOCK, LOT, PITCH, PLOT,
-  blockGrid, blocksNear, housePosition, worldToGrid, gridToBlock, firstHouseOfBlock,
+  blockGrid, blocksNear, housePosition, worldToGrid, gridToBlock, firstHouseOfBlock, lastHouseOfBlock, houseAt, blockOfHouse,
 } from '../shared/layout.js';
 import { plotNodes, plazaNodes, NODE_KINDS, YARD_SLOTS, toWorld, PLAZA } from '../shared/nodes.js';
 import { WALL_PAINTS, ROOF_PAINTS } from '../shared/game.js';
@@ -18,6 +18,7 @@ import { VENUES } from '../shared/nodes.js';
 import { lookFor, colorOf } from '../shared/style.js';
 import { Sky } from './sky.js';
 import { loadBlock } from './api.js';
+import { buildCentre } from './centre.js';
 
 // Rendering strategy for a big town:
 // - Only blocks within LOAD_RADIUS of the player are kept in memory.
@@ -71,6 +72,17 @@ function roadTexture() {
   return t;
 }
 
+// Property-band colours: the West District's blocks, the East District's,
+// the middle strip (gold), and further out a repeating set.
+const WEST_BANDS = [0x955436, 0x7cc8f0, 0xd93a96, 0xf7941d];
+const EAST_BANDS = [0xed1b24, 0xf5d000, 0x1fb25a, 0x0072bb];
+function bandColor(b) {
+  if (b < 0) return 0xf2c94c;
+  if (b < 4) return WEST_BANDS[b];
+  if (b < 8) return EAST_BANDS[b - 4];
+  return [...WEST_BANDS, ...EAST_BANDS][b % 8];
+}
+
 const HOUSE_PARTS = ['walls', 'roof', 'details', 'glass', 'trim', 'door', 'shutter'];
 const vc = (opts = {}) => new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
 
@@ -79,7 +91,7 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !MOBILE || devicePixelRatio < 2, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MOBILE ? 1.5 : 2));
     this.renderer.toneMapping = THREE.NeutralToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.12; // vivid, diorama-style colours
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
@@ -141,10 +153,21 @@ export class World {
     // already fall on road centres, which is where the dashes are painted.
     this.scene.add(this.ground);
 
-    this.sidewalks = this.#instanced(new THREE.BoxGeometry(LOT + 8, 0.3, LOT + 8).translate(0, 0.15, 0), new THREE.MeshLambertMaterial({ color: 0xd9d4ca }), BLOCKS, { receive: true });
-    this.lots = this.#instanced(M.lotGeometry(LOT + 1), vc(), BLOCKS, { receive: true });
+    const CELLS = BLOCKS + 4; // + the centre's plaza, parks and villa lot
+    this.sidewalks = this.#instanced(new THREE.BoxGeometry(LOT + 8, 0.3, LOT + 8).translate(0, 0.15, 0), new THREE.MeshLambertMaterial({ color: 0xece4d4 }), CELLS, { receive: true });
+    this.lots = this.#instanced(M.lotGeometry(LOT + 1), vc(), CELLS, { receive: true });
     this.lots.position.y = 0.32;
-    this.tufts = this.#instanced(M.grassTuftGeometry(), vc(), BLOCKS * 40);
+    this.tufts = this.#instanced(M.grassTuftGeometry(), vc(), CELLS * 40);
+    // Board-game look: every block has a coloured property band round its
+    // edge (each district its own set of colours, like a game board).
+    const band = [];
+    const e = LOT / 2 + 3.2;
+    for (const s of [-1, 1]) {
+      band.push(new THREE.BoxGeometry(LOT + 7.6, 0.16, 1.4).translate(0, 0.38, s * e));
+      band.push(new THREE.BoxGeometry(1.4, 0.16, LOT + 7.6).translate(s * e, 0.38, 0));
+    }
+    this.bands = this.#instanced(mergeGeometries(band), new THREE.MeshLambertMaterial(), CELLS, { receive: true });
+    this.bands.setColorAt(0, new THREE.Color());
     this.tufts.position.y = 0.3;
   }
 
@@ -237,8 +260,8 @@ export class World {
 
   // ---------- street props ----------
   #buildProps() {
-    this.lamps = this.#instanced(M.lampGeometry(), vc(), BLOCKS * 4 + 16, { cast: true });
-    this.lampBulbs = this.#instanced(M.lampBulbGeometry(), new THREE.MeshBasicMaterial({ color: 0xfff1c9 }), BLOCKS * 4 + 16);
+    this.lamps = this.#instanced(M.lampGeometry(), vc(), (BLOCKS + 4) * 4 + 16, { cast: true });
+    this.lampBulbs = this.#instanced(M.lampBulbGeometry(), new THREE.MeshBasicMaterial({ color: 0xfff1c9 }), (BLOCKS + 4) * 4 + 16);
   }
 
   // ---------- plaza (block grid 0,0) ----------
@@ -442,6 +465,9 @@ export class World {
 
     this.plaza = g;
     this.scene.add(g);
+    // The middle strip: boulevard, parks, villas.
+    this.centre = buildCentre();
+    this.scene.add(this.centre.group);
 
     // Ripple rings for fountain + pond.
     this.ripples = new THREE.InstancedMesh(
@@ -580,12 +606,14 @@ export class World {
     let flags = 0;
     const parkedCount = Object.fromEntries(Object.keys(this.parked).map((k) => [k, 0]));
     // Plaza lot is always present.
-    const plazaBlocks = [[0, 0, true]];
+    const plazaBlocks = [[0, 0, true, -1], [0, -1, false, -3], [0, 1, false, -2], [0, 2, false, -3]];
     const blocks = [...plazaBlocks, ...[...this.blocks.keys()].map((b) => [...blockGrid(b), false, b])];
-    for (const [gx, gz, isPlaza] of blocks) {
+    for (const [gx, gz, isPlaza, bn] of blocks) {
       const cx = gx * PITCH;
       const cz = gz * PITCH;
       m.makeTranslation(cx, 0, cz);
+      this.bands.setMatrixAt(lots, m);
+      this.bands.setColorAt(lots, c.setHex(bandColor(bn)));
       this.sidewalks.setMatrixAt(lots++, m);
       const half = LOT / 2 + 2.5;
       lampAt(cx - half, cz - half);
@@ -612,7 +640,9 @@ export class World {
       this.lots.setMatrixAt(li++, m);
     }
     this.lots.count = li;
-    this.sidewalks.count = lots;
+    this.sidewalks.count = this.bands.count = lots;
+    this.bands.instanceMatrix.needsUpdate = true;
+    if (this.bands.instanceColor) this.bands.instanceColor.needsUpdate = true;
     this.lamps.count = this.lampBulbs.count = lamps;
     this.tufts.count = tufts;
 
@@ -765,7 +795,7 @@ export class World {
     if (this.center && Math.max(Math.abs(this.center.gx), Math.abs(this.center.gz)) <= LOAD_RADIUS) list.push(...plazaNodes());
     for (const b of this.blocks.keys()) {
       const first = firstHouseOfBlock(b);
-      for (let id = first; id < first + HOUSES_PER_BLOCK; id++) list.push(...plotNodes(id));
+      for (let id = first; id <= lastHouseOfBlock(b); id++) list.push(...plotNodes(id));
     }
     this.nodes = list;
     this.nodeIndex.clear();
@@ -935,6 +965,7 @@ export class World {
     }
     const [gx, gz] = worldToGrid(x, z);
     const b = gridToBlock(gx, gz);
+    if (b < -1) return this.centre.blocked(x, z);
     if (b < 0) {
       // Plaza: fountain, pond water, workbench, stall, board, nodes.
       if (Math.hypot(x, z) < 10.4) return true;
@@ -960,7 +991,8 @@ export class World {
     const sx = Math.round(lx / PLOT + (BLOCK_SIDE - 1) / 2);
     const sz = Math.round(lz / PLOT + (BLOCK_SIDE - 1) / 2);
     if (sx < 0 || sz < 0 || sx >= BLOCK_SIDE || sz >= BLOCK_SIDE) return false;
-    const id = b * HOUSES_PER_BLOCK + sz * BLOCK_SIDE + sx + 1;
+    const id = houseAt(b, sz * BLOCK_SIDE + sx);
+    if (!id) return false; // an unused plot at the end of a district
     const h = this.houses.get(id) || (this.overrides.has(id) ? { id } : null);
     if (h && (!GAME || !h.mv)) {
       // Footprint of this house's model, in the house's own frame.
@@ -978,7 +1010,7 @@ export class World {
       if (Math.abs(ux - (meta.cx || 0)) < meta.hx + 0.3 && Math.abs(uz - (meta.cz || 0)) < meta.hz + 0.3) return true;
     }
     // Nodes of this plot and the plot behind it (shared back garden).
-    const neighbours = [id, id - BLOCK_SIDE, id + BLOCK_SIDE].filter((n) => n >= 1);
+    const neighbours = [id, id - BLOCK_SIDE, id + BLOCK_SIDE].filter((n) => n >= 1 && blockOfHouse(n) === b);
     for (const n of neighbours) if (this.#nodeBlocks(plotNodes(n), x, z)) return true;
     return false;
   }
@@ -1004,7 +1036,7 @@ export class World {
     for (const st of this.styles) targets.push(st.walls, st.roof);
     targets.push(this.beds, this.plants, this.fruits);
     if (this.interior) targets.unshift(this.interior.group);
-    targets.push(this.plaza);
+    targets.push(this.plaza, this.centre.group);
     const hits = this.raycaster.intersectObjects(targets, true);
     for (const hit of hits) {
       const obj = hit.object;
@@ -1036,6 +1068,7 @@ export class World {
         if (o.userData?.seat) return { seat: o.userData.seat };
         if (o.userData?.dice) return { dice: true };
         if (o.userData?.ride) return { ride: true };
+        if (o.userData?.villa !== undefined) return { villa: o.userData.villa };
       }
       // Plaza stations by proximity of the hit point.
       const p = hit.point;

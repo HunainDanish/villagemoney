@@ -4,6 +4,10 @@ import { carGeometry } from './props.js';
 import { CARS } from '../shared/life.js';
 
 const damp = THREE.MathUtils.damp;
+const CAM_MODES = ['street', 'close', 'high'];
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+// Damp an angle the short way round.
+const dampAngle = (a, b, k, dt) => a + wrap(b - a) * (1 - Math.exp(-k * dt));
 
 function readPref(k) {
   try {
@@ -33,8 +37,13 @@ export class Player {
     this.char.heading = 0;
     this.yaw = Math.PI; // camera yaw around the player (behind you at the start)
     this.zoom = innerWidth < innerHeight ? 1.45 : 1;
-    // Camera: 'street' = low, close behind you; 'high' = the overview angle.
-    this.camMode = readPref('pl_cam') || 'street';
+    // Camera: 'street' = low, behind you; 'close' = close-up third person,
+    // locked behind your back; 'high' = the overview angle. Sitting down
+    // switches to first person (eye level) until you stand up.
+    this.camMode = CAM_MODES.includes(readPref('pl_cam')) ? readPref('pl_cam') : 'street';
+    this.firstPerson = false;
+    this.aheadS = 0; // smoothed look-ahead
+    this.camHeading = 0; // smoothed heading the camera follows
     this.joy = null; // on-screen joystick (phones)
     this.runToggle = false; // Run button
     this.dragging = false;
@@ -81,7 +90,7 @@ export class Player {
         down = null;
         return;
       }
-      down = { x: e.clientX, y: e.clientY, yaw: this.yaw, dragged: false };
+      down = { x: e.clientX, y: e.clientY, yaw: this.yaw, pitch: this.pitch, dragged: false };
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener('pointermove', (e) => {
@@ -94,7 +103,10 @@ export class Player {
       if (!down) return;
       const dx = e.clientX - down.x;
       if (Math.abs(dx) > 6 || Math.abs(e.clientY - down.y) > 6) down.dragged = true;
-      if (down.dragged) this.yaw = down.yaw - dx * 0.008;
+      if (down.dragged) {
+        this.yaw = down.yaw - dx * 0.008;
+        if (this.seat) this.pitch = THREE.MathUtils.clamp((down.pitch ?? -0.12) - (e.clientY - down.y) * 0.004, -0.9, 0.6);
+      }
     });
     canvas.addEventListener('pointerup', (e) => {
       lift(e);
@@ -154,7 +166,7 @@ export class Player {
   }
 
   toggleCamera() {
-    this.camMode = this.camMode === 'street' ? 'high' : 'street';
+    this.camMode = CAM_MODES[(CAM_MODES.indexOf(this.camMode) + 1) % CAM_MODES.length];
     writePref('pl_cam', this.camMode);
     return this.camMode;
   }
@@ -180,6 +192,10 @@ export class Player {
     this.pos.set(seat.x, 0, seat.z);
     this.heading = seat.h;
     this.char.heading = seat.h;
+    // First person: look the way the seat faces (drag to look around).
+    // (Café chairs: a little to the side, so the parasol pole isn't dead centre.)
+    this.yaw = seat.h + Math.PI + (seat.table ? 0.22 : 0);
+    this.pitch = seat.table ? -0.5 : -0.08; // café: looking down at the table
   }
 
   leaveSeat() {
@@ -199,7 +215,9 @@ export class Player {
     this.pos.set(x, 0, z);
     if (faceX !== undefined) this.heading = Math.atan2(faceX - x, faceZ - z);
     this.char.heading = this.heading;
+    this.camHeading = this.heading;
     this.yaw = this.heading + Math.PI;
+    this.aheadS = 0;
     this.camReady = false;
   }
 
@@ -288,39 +306,74 @@ export class Player {
       this.carMesh.rotation.y = this.char.heading;
     }
 
-    // Camera. Street: low and close, swings in behind you as you move.
-    // High: the overview angle (about 45 degrees down).
-    const street = this.camMode === 'street';
-    if (street && this.moving && !this.dragging) {
-      let d = this.heading + Math.PI - this.yaw;
-      d = Math.atan2(Math.sin(d), Math.cos(d));
-      this.yaw += d * (1 - Math.exp(-(this.vehicle ? 3 : 2.2) * dt));
+    this.#camera(dt, running);
+  }
+
+  // Camera. Everything eases towards its target (no snapping, no shake):
+  // street = low behind you, swinging in behind as you walk; close = a tight
+  // over-the-shoulder lock that always stays behind your back; high = the
+  // overview angle; seated = first person at eye level.
+  #camera(dt, running) {
+    dt = Math.min(dt, 0.1); // a very slow frame must not make the camera jump
+    const cam = this.world.camera;
+    const fp = Boolean(this.seat) && !this.riding;
+    if (fp !== this.firstPerson) {
+      this.firstPerson = fp;
+      this.char.group.visible = !fp && !this.vehicle;
+      this.onView?.(fp);
     }
-    const car = this.vehicle ? 1.35 : 1;
-    const dist = (street ? 11 : 30) * this.zoom * car;
-    const height = (street ? (4.2 + 3.2 * this.zoom) * car : 28 * this.zoom + 3) + this.pos.y;
-    const ahead = this.moving ? (street ? 5 : 3) : street ? 2 : 0;
-    const lookX = this.pos.x + Math.sin(this.heading) * ahead;
-    const lookZ = this.pos.z + Math.cos(this.heading) * ahead;
-    const lookY = (street ? 2.6 : 3) + this.pos.y;
-    const tx = this.pos.x + Math.sin(this.yaw) * dist;
-    const tz = this.pos.z + Math.cos(this.yaw) * dist;
+    // The camera follows a smoothed heading, so a quick turn or a bump
+    // against a wall never jerks the view.
+    this.camHeading = dampAngle(this.camHeading, this.char.heading, 6, dt);
+
+    let tx, ty, tz, lookX, lookY, lookZ, stiff;
+    if (fp) {
+      const look = this.yaw + Math.PI;
+      // Seated eye level, a little behind the seat point (where the head is).
+      const eye = this.seatY + 1.3 + this.pos.y;
+      tx = this.pos.x - Math.sin(this.heading) * 0.3;
+      tz = this.pos.z - Math.cos(this.heading) * 0.3;
+      ty = eye;
+      const p = this.pitch ?? -0.12;
+      lookX = tx + Math.sin(look) * Math.cos(p) * 10;
+      lookZ = tz + Math.cos(look) * Math.cos(p) * 10;
+      lookY = eye + Math.sin(p) * 10;
+      stiff = 5;
+    } else {
+      const mode = this.camMode;
+      if (!this.dragging && (mode === 'close' || (mode === 'street' && this.moving))) {
+        // Close: locked behind your back (even standing still). Street:
+        // swings in behind you while you walk.
+        this.yaw = dampAngle(this.yaw, this.camHeading + Math.PI, mode === 'close' ? 4 : this.vehicle ? 3 : 2.2, dt);
+      }
+      const car = this.vehicle ? 1.35 : 1;
+      const cfg = {
+        street: { dist: 11, height: 4.2 + 3.2 * this.zoom, ahead: this.moving ? 5 : 2, look: 2.6 },
+        close: { dist: 5.2, height: 2.2 + 1.1 * this.zoom, ahead: this.moving ? 2.5 : 1.2, look: 2.3 },
+        high: { dist: 30, height: 28 * this.zoom + 3, ahead: this.moving ? 3 : 0, look: 3 },
+      }[mode];
+      const dist = cfg.dist * (mode === 'high' ? 1 : 1) * this.zoom * car;
+      this.aheadS = damp(this.aheadS, cfg.ahead, 2.5, dt);
+      lookX = this.pos.x + Math.sin(this.camHeading) * this.aheadS;
+      lookZ = this.pos.z + Math.cos(this.camHeading) * this.aheadS;
+      lookY = cfg.look + this.pos.y;
+      tx = this.pos.x + Math.sin(this.yaw) * dist;
+      tz = this.pos.z + Math.cos(this.yaw) * dist;
+      ty = (mode === 'high' ? cfg.height : cfg.height * car) + this.pos.y;
+      stiff = mode === 'close' ? 9 : 6;
+    }
     if (!this.camReady) {
-      this.camPos.set(tx, height, tz);
+      this.camPos.set(tx, ty, tz);
       this.camLook.set(lookX, lookY, lookZ);
       this.camReady = true;
     }
-    this.camPos.set(damp(this.camPos.x, tx, 6, dt), damp(this.camPos.y, height, 6, dt), damp(this.camPos.z, tz, 6, dt));
-    this.camLook.set(damp(this.camLook.x, lookX, 10, dt), damp(this.camLook.y, lookY, 6, dt), damp(this.camLook.z, lookZ, 10, dt));
-    const cam = this.world.camera;
+    // Same easing for position and aim, so they never fight each other.
+    this.camPos.set(damp(this.camPos.x, tx, stiff, dt), damp(this.camPos.y, ty, stiff, dt), damp(this.camPos.z, tz, stiff, dt));
+    this.camLook.set(damp(this.camLook.x, lookX, stiff, dt), damp(this.camLook.y, lookY, stiff, dt), damp(this.camLook.z, lookZ, stiff, dt));
     cam.position.copy(this.camPos);
-    if (this.shake > 0) {
-      this.shake -= dt;
-      cam.position.x += (Math.random() - 0.5) * this.shake * 1.2;
-      cam.position.y += (Math.random() - 0.5) * this.shake * 1.2;
-    }
     cam.lookAt(this.camLook);
-    const fov = (street ? 55 : 45) + (running && this.moving ? 5 : 0);
+    const street = this.camMode !== 'high';
+    const fov = fp ? 68 : (street ? 55 : 45) + (running && this.moving ? 4 : 0);
     if (Math.abs(cam.fov - fov) > 0.05) {
       cam.fov = damp(cam.fov, fov, 4, dt);
       cam.updateProjectionMatrix();
