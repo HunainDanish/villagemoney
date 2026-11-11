@@ -165,6 +165,17 @@ body.flash::after { content: ''; position: fixed; inset: 0; background: #fff; op
 .chip-btn { cursor: pointer; font: inherit; font-weight: 800; color: var(--ink); }
 .brand { cursor: pointer; }
 
+/* Clean screen: the buttons live behind one Menu button (☰). */
+.menu-fab { position: fixed; right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); z-index: 7;
+  width: 62px; height: 62px; border-radius: 50%; border: 2px solid var(--line); background: var(--panel); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; font: inherit; color: var(--ink); }
+.menu-fab span { font-size: 24px; line-height: 1; }
+.menu-fab small { font-size: 10px; font-weight: 800; }
+body.menu-open .menu-fab { background: var(--ink); color: #fff; }
+body:not(.menu-open) #side, body:not(.menu-open) .hotbar, body:not(.menu-open) #search, body:not(.menu-open) .hud.bottom .hint { display: none !important; }
+body.menu-open .hud.bottom { padding-right: 80px; }
+body.fp .menu-fab, body.riding .menu-fab, body.touring .menu-fab { display: none !important; }
+
 /* Seated (first person), riding or on a tour: the regular UI steps aside. */
 body.fp .hud, body.fp #side, body.fp #controls, body.fp #react-menu, body.fp #nav, body.fp #demo-badge, body.fp #labels, body.fp #prompt,
 body.riding .hud, body.riding #side, body.riding #controls, body.riding #react-menu, body.riding #demo-badge,

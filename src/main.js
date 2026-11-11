@@ -636,6 +636,22 @@ $('search').onsubmit = async (e) => {
 $('bag-btn').onclick = openBag;
 $('quests-btn').onclick = openQuests;
 $('settings-btn').onclick = openMenu;
+
+// ☰ Menu: the screen stays clear until you open it.
+function setMenu(open) {
+  document.body.classList.toggle('menu-open', open);
+  $('menu-btn').setAttribute('aria-expanded', String(open));
+  $('menu-btn').querySelector('span').textContent = open ? '✕' : '☰';
+}
+$('menu-btn').onclick = () => setMenu(!document.body.classList.contains('menu-open'));
+// Picking something closes it again (run and view stay open so you can cycle them).
+for (const el of document.querySelectorAll('.hotbar .slot, #places-btn, #react-btn, #tour-btn')) {
+  el.addEventListener('click', () => setMenu(false));
+}
+$('search').addEventListener('submit', () => setMenu(false));
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.body.classList.contains('menu-open')) setMenu(false);
+});
 $('plaza-btn').onclick = () => {
   closeSheet();
   player.teleport(0, -22, 0, 0); // facing the fountain, camera clear of buildings

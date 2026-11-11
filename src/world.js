@@ -19,6 +19,7 @@ import { lookFor, colorOf } from '../shared/style.js';
 import { Sky } from './sky.js';
 import { loadBlock } from './api.js';
 import { buildCentre } from './centre.js';
+import { Forest } from './forest.js';
 
 // Rendering strategy for a big town:
 // - Only blocks within LOAD_RADIUS of the player are kept in memory.
@@ -99,6 +100,7 @@ export class World {
     this.scene.fog = new THREE.Fog(0xcfe9ff, 150, 330);
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.5, 1100);
     this.sky = new Sky(this.scene, this.renderer);
+    this.forest = new Forest(this.scene);
     this.night = 0;
 
     this.totalHouses = 0;
@@ -520,6 +522,7 @@ export class World {
     const center = new THREE.Vector3(px, 0, pz);
     this.ground.position.set(Math.round(px / PITCH) * PITCH, 0, Math.round(pz / PITCH) * PITCH);
     const day = this.sky.update(center, dt);
+    this.forest.update(center, this.totalHouses, this.sky.horizon, day);
     const night = 1 - day;
     if (Math.abs(night - this.night) > 0.02 || this.dirtyGlow) {
       this.night = night;
@@ -966,6 +969,7 @@ export class World {
     const [gx, gz] = worldToGrid(x, z);
     const b = gridToBlock(gx, gz);
     if (b < -1) return this.centre.blocked(x, z);
+    if (this.forest.blocked(x, z, this.totalHouses)) return true;
     if (b < 0) {
       // Plaza: fountain, pond water, workbench, stall, board, nodes.
       if (Math.hypot(x, z) < 10.4) return true;
