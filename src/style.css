@@ -179,6 +179,8 @@ body.fp .menu-fab, body.riding .menu-fab, body.touring .menu-fab { display: none
 /* Aerial view of the whole town: just the sky, the town and the Back bar. */
 body.aerial #side, body.aerial #controls, body.aerial .hud.bottom, body.aerial #labels, body.aerial #react-menu, body.aerial #nav,
 body.aerial .menu-fab, body.aerial #demo-badge, body.aerial #prompt, body.aerial #seatbar, body.aerial #search { display: none !important; }
+#citybar .city-walk { width: auto; height: 40px; padding: 0 14px; border-radius: 12px; border: 0; background: #ffd34d; color: #2a2100; font: inherit; font-weight: 800; white-space: nowrap; cursor: pointer; }
+#citybar.intro .city-back { display: none; }
 #citybar .city-back { border: 0; background: var(--card, #fff); color: var(--ink); border-radius: 12px; width: 40px; height: 40px; font-size: 18px; cursor: pointer; }
 
 /* Seated (first person), riding or on a tour: the regular UI steps aside. */

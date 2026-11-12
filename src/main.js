@@ -845,22 +845,33 @@ const tour = new Tour({
   },
 });
 // 🛩️ City: fly up and see the whole town; any move of your own (or ✕)
-// brings you back down to where you were standing.
-function setCity(on) {
+// brings you back down to where you were standing. Everyone arriving starts
+// up here (intro), with a "Walk in" button to go down into the town.
+function cityText() {
+  const n = world.totalHouses;
+  $('city-text').textContent = n ? `🛩️ The whole town · ${n.toLocaleString()} ${n === 1 ? 'home' : 'homes'}` : '🛩️ The whole town';
+}
+function setCity(on, { intro = false } = {}) {
   if (on === player.aerial) return;
   if (on) {
     tour.stop();
     player.leaveSeat();
     player.target = null;
-    const n = world.totalHouses;
-    $('city-text').textContent = `🛩️ The whole town · ${n.toLocaleString()} ${n === 1 ? 'home' : 'homes'}`;
+    cityText();
   }
+  const bar = $('citybar');
+  bar.classList.toggle('intro', on && intro);
+  bar.querySelector('.city-walk').hidden = !(on && intro);
+  bar.querySelector('small').textContent = on && intro
+    ? 'Welcome! Drag to look round · tap Walk in to start'
+    : 'Drag to turn · pinch or scroll to zoom';
   player.setAerial(on);
   document.body.classList.toggle('aerial', on);
-  $('citybar').hidden = !on;
+  bar.hidden = !on;
 }
 $('city-btn').onclick = () => setCity(true);
 $('citybar').querySelector('.city-back').onclick = () => setCity(false);
+$('citybar').querySelector('.city-walk').onclick = () => setCity(false);
 addEventListener('keydown', (e) => {
   if (!player.aerial || e.target instanceof HTMLInputElement) return;
   if (e.key === 'Escape' || /^(w|a|s|d|arrow\w+)$/i.test(e.key)) setCity(false);
@@ -1135,6 +1146,7 @@ async function refreshStats() {
     townStats = { residents: s.residents, latest: s.latest || [], villas: s.villas || [0, 0] };
     applyVillas();
     world.setTotal(s.maxId);
+    if (player.aerial) cityText();
     const goal = nextGoal(s.residents);
     $('count').textContent = goal
       ? `${fmt.format(s.residents)} live here · ${fmt.format(goal.at - s.residents)} more until ${goal.name}`
@@ -1162,6 +1174,9 @@ async function boot() {
     openSignIn();
   };
 
+  // Arriving: start with the whole town from the air (not when a link takes
+  // you straight home).
+  if (!new URLSearchParams(location.search).has('home')) setCity(true, { intro: true });
   await refreshStats();
   setInterval(refreshStats, 60000);
 
