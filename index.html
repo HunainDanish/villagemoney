@@ -45,6 +45,7 @@
     <!-- Touch / quick controls: joystick on the left, buttons on the right -->
     <div id="controls"></div>
     <div id="side" class="side">
+      <button class="round" id="chat-btn" title="Chat with people near you"><span>💬</span><small>Chat</small><i id="chat-badge" class="badge-dot" hidden></i></button>
       <button class="round" id="places-btn" title="Places"><span>📍</span><small>Places</small></button>
       <button class="round" id="react-btn" title="React"><span>😊</span><small>React</small></button>
       <button class="round" id="run-btn" title="Run"><span>🏃</span><small>Run</small></button>
@@ -52,8 +53,21 @@
       <button class="round" id="tour-btn" title="Town tour: walks you round on its own"><span>▶️</span><small>Tour</small></button>
       <button class="round" id="city-btn" title="See the whole town from the air"><span>🛩️</span><small>City</small></button>
     </div>
-    <button id="menu-btn" class="menu-fab" aria-expanded="false" aria-label="Open menu" title="Menu"><span>☰</span><small>Menu</small></button>
+    <button id="menu-btn" class="menu-fab" aria-expanded="false" aria-label="Open menu" title="Menu"><span>☰</span><small>Menu</small><i id="menu-badge" class="badge-dot" hidden></i></button>
     <div id="react-menu" class="react-menu" hidden></div>
+    <section id="chat" class="chat" hidden aria-label="Chat">
+      <header>
+        <button class="chat-back" type="button" title="Everyone nearby">‹</button>
+        <div><b class="chat-who">💬 Chat</b><small class="chat-status"></small></div>
+        <button class="chat-close" type="button" aria-label="Close chat">✕</button>
+      </header>
+      <div class="chat-people"></div>
+      <div class="chat-log" aria-live="polite"></div>
+      <form class="chat-form" autocomplete="off">
+        <input maxlength="200" placeholder="Say something…" aria-label="Message" enterkeyhint="send" />
+        <button type="submit">Send</button>
+      </form>
+    </section>
     <div id="seatbar" class="seatbar" hidden></div>
     <div id="citybar" class="navbar" hidden>
       <div class="nav-main"><b id="city-text">🛩️ The whole town</b><small>Drag to turn · pinch or scroll to zoom</small></div>

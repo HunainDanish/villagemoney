@@ -16,6 +16,14 @@ import { PITCH } from '../shared/layout.js';
 //   else is actually in your region. Alone = zero messages per second.
 // - Moving updates go out twice a second; peers are smoothly interpolated.
 
+// Demo bots answer chat with something friendly.
+function botReply(text) {
+  const t = text.toLowerCase();
+  if (/\b(hi|hey|hello|salam|assalam)/.test(t)) return ['hey! 👋', 'hi there!', 'salam! how are you?'][(Math.random() * 3) | 0];
+  if (t.includes('?')) return ['good question 😄', 'not sure, have you tried the café?', 'yes!', 'maybe later?'][(Math.random() * 4) | 0];
+  return ['haha nice', 'same here', 'love this town 🏡', 'see you at the fountain!', 'cool 😎'][(Math.random() * 5) | 0];
+}
+
 const REGION = 3; // blocks per region side (bigger = fewer border splits)
 const SEND_MOVING_MS = 500;
 const PEER_TIMEOUT_MS = 90000; // fallback if a "leave" is ever missed
@@ -36,6 +44,9 @@ export class Net {
     this.status = 'off'; // off | connecting | live | error
     this.onCount = () => {};
     this.onReact = () => {}; // (character group, reaction key)
+    this.onChat = () => {}; // ({ id, name, text }) a message for you
+    this.onPeerTap = () => {}; // (id) their name tag was tapped
+    this.onPeerGone = () => {}; // (id) they left your area
     this.online = 0; // everyone in town right now (lobby presence)
     this.regionCounts = {}; // region -> people there
   }
@@ -129,6 +140,7 @@ export class Net {
     });
     ch.on('broadcast', { event: 'p' }, ({ payload }) => this.#receive(payload));
     ch.on('broadcast', { event: 'e' }, ({ payload }) => this.#reacted(payload));
+    ch.on('broadcast', { event: 'c' }, ({ payload }) => this.#chatIn(payload));
     ch.on('presence', { event: 'sync' }, () => this.#syncPresence());
     ch.subscribe((status, err) => {
       if (status === 'SUBSCRIBED') {
@@ -176,11 +188,16 @@ export class Net {
       this.world.scene.add(char.group);
       const label = document.createElement('div');
       label.className = 'label peer';
+      const id = p.i;
+      label.onclick = () => this.onPeerTap(id); // tap a name tag to chat
       this.labelLayer.append(label);
-      peer = { char, label, to: new THREE.Vector3(p.x, 0, p.z), h: p.h, last: 0 };
+      peer = { char, label, to: new THREE.Vector3(p.x, 0, p.z), h: p.h, last: 0, name };
       this.peers.set(p.i, peer);
     }
-    if (peer.label.textContent !== name) peer.label.textContent = name;
+    if (peer.name !== name || !peer.label.textContent) {
+      peer.label.textContent = name;
+      peer.name = name;
+    }
     // Their look changed (My look): rebuild their character.
     const l = typeof p.l === 'string' ? p.l : null;
     if (l !== (peer.l ?? null) && (l === null || decodeAvatar(l))) {
@@ -227,9 +244,76 @@ export class Net {
     }
   }
 
+  // ---------- chat ----------
+  // One-to-one messages to someone in your area, sent over the area's live
+  // channel and addressed to them; other browsers ignore them. Only people
+  // you can see can message you.
+  #chatIn(p) {
+    if (!p || p.to !== this.id || typeof p.i !== 'string' || typeof p.t !== 'string') return;
+    const peer = this.peers.get(p.i);
+    if (!peer) return;
+    const text = p.t.replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (text) this.onChat({ id: p.i, name: peer.name, text });
+  }
+
+  // Send a message; returns false if they can't get it right now.
+  chat(id, text) {
+    const peer = this.peers.get(id);
+    if (!peer || this.hidden) return false;
+    if (id.startsWith('bot')) {
+      setTimeout(() => this.peers.has(id) && this.onChat({ id, name: peer.name, text: botReply(text) }), 900 + Math.random() * 1500);
+      return true;
+    }
+    if (this.channel?.state !== 'joined') return false;
+    this.channel.send({ type: 'broadcast', event: 'c', payload: { i: this.id, to: id, t: text } });
+    return true;
+  }
+
+  peerName(id) {
+    return this.peers.get(id)?.name ?? null;
+  }
+
+  peerObject(id) {
+    const peer = this.peers.get(id);
+    return peer ? (peer.car && peer.v ? peer.car : peer.char.group) : null;
+  }
+
+  // People here, nearest first: [{ id, name, dist }].
+  nearby(x, z) {
+    return [...this.peers.entries()]
+      .map(([id, p]) => ({ id, name: p.name, dist: Math.hypot(p.char.group.position.x - x, p.char.group.position.z - z) }))
+      .sort((a, b) => a.dist - b.dist);
+  }
+
+  // Who is under a tap on the screen (within a finger's width), or null.
+  peerAt(cx, cy) {
+    const v = new THREE.Vector3();
+    let best = null;
+    let bestD = 46;
+    for (const [id, peer] of this.peers) {
+      const g = peer.car && peer.v ? peer.car : peer.char.group;
+      if (!g.visible && !peer.v) continue;
+      for (const y of [1, 2.4]) {
+        v.copy(g.position).setY(y).project(this.world.camera);
+        if (v.z > 1) continue;
+        const d = Math.hypot(((v.x + 1) / 2) * innerWidth - cx, ((1 - v.y) / 2) * innerHeight - cy);
+        if (d < bestD) {
+          bestD = d;
+          best = id;
+        }
+      }
+    }
+    return best;
+  }
+
+  setUnread(id, on) {
+    this.peers.get(id)?.label.classList.toggle('unread', on);
+  }
+
   #remove(id) {
     const peer = this.peers.get(id);
     if (!peer) return;
+    this.onPeerGone(id);
     this.world.scene.remove(peer.char.group);
     if (peer.car) this.world.scene.remove(peer.car);
     peer.char.dispose();

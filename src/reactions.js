@@ -44,6 +44,17 @@ export class Bubbles {
     this.list.push({ el, object, height, until: performance.now() + 3200 });
   }
 
+  // A chat line over someone's head (longer than a reaction).
+  say(object, text, height = 4.6) {
+    if (!object) return;
+    for (const b of this.list) if (b.object === object) b.until = 0;
+    const el = document.createElement('div');
+    el.className = 'bubble text say';
+    el.textContent = text.length > 80 ? `${text.slice(0, 77)}…` : text;
+    this.layer.append(el);
+    this.list.push({ el, object, height, until: performance.now() + Math.min(9000, 3500 + text.length * 60) });
+  }
+
   update() {
     const now = performance.now();
     this.list = this.list.filter((b) => {

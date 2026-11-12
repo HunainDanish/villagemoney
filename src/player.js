@@ -113,6 +113,12 @@ export class Player {
       lift(e);
       this.dragging = false;
       if (down && !down.dragged) {
+        // Tapped a person: talk to them.
+        const peer = this.peerAt?.(e.clientX, e.clientY);
+        if (peer) {
+          down = null;
+          return this.onPeer?.(peer);
+        }
         const hit = world.pick((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
         if (hit) this.onTap(hit);
       }

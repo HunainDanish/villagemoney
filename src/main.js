@@ -21,6 +21,7 @@ import { Navigator, doorPoint } from './nav.js';
 import { REACTIONS, Bubbles } from './reactions.js';
 import { Hangout } from './hangout.js';
 import { Tour } from './tour.js';
+import { Chat } from './chat.js';
 import { VENUES } from '../shared/nodes.js';
 import { Music } from './music.js';
 import { nextGoal, reached, VILLAS, villaLevel, nextVillaLevel } from '../shared/life.js';
@@ -645,7 +646,7 @@ function setMenu(open) {
 }
 $('menu-btn').onclick = () => setMenu(!document.body.classList.contains('menu-open'));
 // Picking something closes it again (run and view stay open so you can cycle them).
-for (const el of document.querySelectorAll('.hotbar .slot, #places-btn, #react-btn, #tour-btn, #city-btn')) {
+for (const el of document.querySelectorAll('.hotbar .slot, #places-btn, #react-btn, #tour-btn, #city-btn, #chat-btn')) {
   el.addEventListener('click', () => setMenu(false));
 }
 $('search').addEventListener('submit', () => setMenu(false));
@@ -729,6 +730,18 @@ function react(key) {
   sfx.click();
   net.react(key);
 }
+// 💬 Chat: tap a person (or their name tag), or pick from 💬 Chat.
+const chat = new Chat({ el: $('chat'), net, player, bubbles, toast: (m) => ui.toast(m), sfx });
+player.peerAt = (x, y) => net.peerAt(x, y);
+player.onPeer = (id) => chat.open(id);
+chat.onUnread = (n) => {
+  for (const id of ['chat-badge', 'menu-badge']) {
+    $(id).hidden = !n;
+    $(id).textContent = n;
+  }
+};
+$('chat-btn').onclick = () => (chat.isOpen && !chat.with ? chat.close() : chat.openList());
+
 $('react-menu').innerHTML = REACTIONS.filter((r) => !r.hidden).map((r) => `<button data-react="${r.k}" class="${r.text ? 'text' : ''}">${r.text || r.icon}</button>`).join('');
 $('react-menu').querySelectorAll('[data-react]').forEach((b) => (b.onclick = () => react(b.dataset.react)));
 $('react-btn').onclick = () => ($('react-menu').hidden = !$('react-menu').hidden);
@@ -1249,4 +1262,4 @@ requestAnimationFrame(frame);
 boot();
 
 // Expose a tiny debug handle in development only.
-if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, VENUES, life, nav, net, react, hangout, tour, setCity, openPlaces, openSignIn, openPassword, setMe: (m) => (me = m) };
+if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, VENUES, life, nav, net, react, hangout, tour, setCity, chat, openPlaces, openSignIn, openPassword, setMe: (m) => (me = m) };
