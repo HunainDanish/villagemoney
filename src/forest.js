@@ -137,6 +137,16 @@ export class Forest {
     this.c = new THREE.Color();
   }
 
+  // Trees of a wild cell (the aerial view draws them too).
+  cellTrees(gx, gz) {
+    return this.#cell(gx, gz);
+  }
+
+  // Is that cell drawn in full by the woods round the player?
+  covers(gx, gz, center) {
+    return Math.abs(gx - Math.round(center.x / PITCH)) <= RADIUS && Math.abs(gz - Math.round(center.z / PITCH)) <= RADIUS;
+  }
+
   // Trees of one wild cell, the same for every visitor.
   #cell(gx, gz) {
     const k = `${gx},${gz}`;
@@ -171,8 +181,11 @@ export class Forest {
   }
 
   // Redraw when you change cell or the town grows.
-  update(center, total, horizon, day) {
-    this.back.position.set(center.x, 0, center.z);
+  // view: { x, z, scale } while in the aerial view (the horizon is then
+  // centred on the whole town and grown to fit round it).
+  update(center, total, horizon, day, view = null) {
+    this.back.position.set(view?.x ?? center.x, 0, view?.z ?? center.z);
+    this.back.scale.setScalar(view?.scale ?? 1);
     // Distance haze: blend the far layers into the sky colour.
     const night = 1 - day;
     const tint = (mesh, hex, haze) => {
@@ -186,7 +199,7 @@ export class Forest {
     const gz = Math.round(center.z / PITCH);
     // Rebuild every few steps; trees past the fog line aren't drawn at all, so
     // the far woods fade into haze in front of the hills.
-    const key = `${Math.round(center.x / 20)},${Math.round(center.z / 20)},${total}`;
+    const key = `${Math.round(center.x / 20)},${Math.round(center.z / 20)},${total},${Boolean(view)}`;
     if (key === this.key) return;
     this.key = key;
     const m = new THREE.Matrix4();
@@ -202,7 +215,7 @@ export class Forest {
         if (!this.#wild(gx + dx, gz + dz, total)) continue;
         this.floor.setMatrixAt(floors++, m.makeTranslation((gx + dx) * PITCH, 0, (gz + dz) * PITCH));
         for (const t of this.#cell(gx + dx, gz + dz)) {
-          if ((t.x - center.x) ** 2 + (t.z - center.z) ** 2 > FAR2) continue;
+          if (!view && (t.x - center.x) ** 2 + (t.z - center.z) ** 2 > FAR2) continue;
           m.compose(v.set(t.x, 0, t.z), q.setFromAxisAngle(up, t.rot), sc.setScalar(t.s));
           const mesh = t.fir ? this.firs : this.broad;
           const i = t.fir ? firs++ : broad++;

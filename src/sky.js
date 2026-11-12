@@ -183,6 +183,7 @@ export class Sky {
     this.renderer = renderer;
     this.dayness = 1;
     this.horizon = 0xcdeeff;
+    this.tmpV = new THREE.Vector3();
     this.tmp = new THREE.Color();
   }
 
@@ -202,7 +203,20 @@ export class Sky {
   }
 
   // Returns 0 (deep night) .. 1 (full day): used for window glow, lamps.
-  update(center, dt) {
+  // view: { x, z, r, scale } in the aerial view: the sky is centred on the
+  // whole town and grown to fit, and the sun's shadows cover all of it.
+  update(center, dt, view = null) {
+    const k0 = view?.scale ?? 1;
+    const vc = view ? this.tmpV.set(view.x, 0, view.z) : center;
+    const shadowR = view ? view.r : 55;
+    if (shadowR !== this.shadowR) {
+      this.shadowR = shadowR;
+      const sc = this.sun.shadow.camera;
+      sc.left = sc.bottom = -shadowR;
+      sc.right = sc.top = shadowR;
+      sc.far = Math.max(260, shadowR * 5);
+      sc.updateProjectionMatrix();
+    }
     const t = this.phase();
     const s = sample(t);
     this.horizon = s.horizon;
@@ -220,14 +234,16 @@ export class Sky {
     const lightDir = day ? sunDir : sunDir.clone().multiplyScalar(-1); // moonlight at night
     this.sun.color.setHex(s.sun);
     this.sun.intensity = s.sunI;
-    this.sun.position.copy(center).addScaledVector(lightDir, 140);
-    this.sun.target.position.copy(center);
+    this.sun.position.copy(vc).addScaledVector(lightDir, Math.max(140, shadowR * 2.5));
+    this.sun.target.position.copy(vc);
 
-    this.dome.position.copy(center);
-    this.sunDisc.position.copy(center).addScaledVector(sunDir, 850);
-    this.sunDisc.lookAt(center);
-    this.moonDisc.position.copy(center).addScaledVector(sunDir, -850);
-    this.moonDisc.lookAt(center);
+    this.dome.position.copy(vc);
+    this.dome.scale.setScalar(k0);
+    this.sunDisc.position.copy(vc).addScaledVector(sunDir, 850 * k0);
+    this.sunDisc.lookAt(vc);
+    this.moonDisc.position.copy(vc).addScaledVector(sunDir, -850 * k0);
+    this.moonDisc.lookAt(vc);
+    for (const o of [this.sunDisc, this.moonDisc, this.sunGlow2, this.moonGlow]) o.scale.setScalar(k0 * (o.userData.base ??= o.scale.x));
     this.sunGlow.position.copy(this.sunDisc.position);
     this.sunGlow2.position.copy(this.sunDisc.position);
     this.moonGlow.position.copy(this.moonDisc.position);
@@ -235,7 +251,7 @@ export class Sky {
     const low = 1 - THREE.MathUtils.clamp(sunDir.y / 0.4, 0, 1);
     const up = sunDir.y > -0.08;
     this.sunGlow.material.color.setHex(s.sun);
-    this.sunGlow.scale.setScalar(260 + low * 160);
+    this.sunGlow.scale.setScalar((260 + low * 160) * k0);
     this.sunGlow.visible = this.sunGlow2.visible = this.sunDisc.visible = up;
     this.sunDisc.material.color.setHex(0xfffbe8).lerp(this.tmp.setHex(0xffb066), low * 0.8);
     this.moonDisc.visible = this.moonGlow.visible = sunDir.y < 0.1;
@@ -243,7 +259,9 @@ export class Sky {
     this.uniforms.sunCol.value.setHex(up ? s.sun : 0x6a7aa8);
     this.uniforms.glow.value = up ? 1 + low * 0.8 : 0.25;
     // The night sky turns round the pole as the hours pass.
-    this.starPivot.position.copy(center);
+    this.starPivot.position.copy(vc);
+    this.starPivot.scale.setScalar(k0);
+    this.clouds.visible = !view; // from the air they'd sit in front of the town
     this.starPivot.rotation.set(0.6, 0, this.time() * Math.PI * 2);
 
     this.dayness = THREE.MathUtils.clamp((sunDir.y + 0.1) / 0.35, 0, 1);

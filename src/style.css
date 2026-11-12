@@ -176,6 +176,11 @@ body:not(.menu-open) #side, body:not(.menu-open) .hotbar, body:not(.menu-open) #
 body.menu-open .hud.bottom { padding-right: 80px; }
 body.fp .menu-fab, body.riding .menu-fab, body.touring .menu-fab { display: none !important; }
 
+/* Aerial view of the whole town: just the sky, the town and the Back bar. */
+body.aerial #side, body.aerial #controls, body.aerial .hud.bottom, body.aerial #labels, body.aerial #react-menu, body.aerial #nav,
+body.aerial .menu-fab, body.aerial #demo-badge, body.aerial #prompt, body.aerial #seatbar, body.aerial #search { display: none !important; }
+#citybar .city-back { border: 0; background: var(--card, #fff); color: var(--ink); border-radius: 12px; width: 40px; height: 40px; font-size: 18px; cursor: pointer; }
+
 /* Seated (first person), riding or on a tour: the regular UI steps aside. */
 body.fp .hud, body.fp #side, body.fp #controls, body.fp #react-menu, body.fp #nav, body.fp #demo-badge, body.fp #labels, body.fp #prompt,
 body.riding .hud, body.riding #side, body.riding #controls, body.riding #react-menu, body.riding #demo-badge,

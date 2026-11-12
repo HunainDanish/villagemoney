@@ -42,6 +42,7 @@ export class Player {
     // switches to first person (eye level) until you stand up.
     this.camMode = CAM_MODES.includes(readPref('pl_cam')) ? readPref('pl_cam') : 'street';
     this.firstPerson = false;
+    this.aerial = false; // 🛩️ whole-town view (camera only; you stay put)
     this.aheadS = 0; // smoothed look-ahead
     this.camHeading = 0; // smoothed heading the camera follows
     this.joy = null; // on-screen joystick (phones)
@@ -68,7 +69,7 @@ export class Player {
     addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     addEventListener('blur', () => this.keys.clear());
     canvas.addEventListener('wheel', (e) => {
-      this.zoom = THREE.MathUtils.clamp(this.zoom * (e.deltaY > 0 ? 1.1 : 0.9), 0.5, 2.2);
+      this.zoom = THREE.MathUtils.clamp(this.zoom * (e.deltaY > 0 ? 1.1 : 0.9), 0.5, this.aerial ? 3.5 : 2.2);
     }, { passive: true });
 
     let down = null;
@@ -97,7 +98,7 @@ export class Player {
       if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.dragging = Boolean(down?.dragged);
       if (pinch) {
-        this.zoom = THREE.MathUtils.clamp(pinch.zoom * (pinch.d / Math.max(1, spread())), 0.5, 2.2);
+        this.zoom = THREE.MathUtils.clamp(pinch.zoom * (pinch.d / Math.max(1, spread())), 0.5, this.aerial ? 3.5 : 2.2);
         return;
       }
       if (!down) return;
@@ -163,6 +164,14 @@ export class Player {
     this.world.scene.remove(old.group);
     this.world.scene.add(this.char.group);
     this.char.group.visible = !this.vehicle; // stay hidden while driving
+  }
+
+  // Fly up over the whole town, or back down to you.
+  setAerial(on) {
+    this.aerial = on;
+    this.world.setAerial(on);
+    if (on) this.aerialZoom = this.zoom;
+    else if (this.aerialZoom) this.zoom = this.aerialZoom;
   }
 
   toggleCamera() {
@@ -327,7 +336,21 @@ export class Player {
     this.camHeading = dampAngle(this.camHeading, this.char.heading, 6, dt);
 
     let tx, ty, tz, lookX, lookY, lookZ, stiff;
-    if (fp) {
+    const view = this.aerial && this.world.aerial?.d ? this.world.aerial : null;
+    if (view) {
+      // Whole town: a slow orbit round its middle, tilted like a diorama.
+      // Drag turns it, wheel / pinch zooms.
+      if (!this.dragging) this.yaw += dt * 0.035;
+      const dist = view.d * THREE.MathUtils.clamp(this.zoom / (this.aerialZoom || 1), 0.35, 1.6);
+      const tilt = 0.8; // ~46 degrees down: the horizon shows at the top
+      tx = view.x + Math.sin(this.yaw) * dist * Math.cos(tilt);
+      tz = view.z + Math.cos(this.yaw) * dist * Math.cos(tilt);
+      ty = dist * Math.sin(tilt);
+      lookX = view.x;
+      lookY = 0;
+      lookZ = view.z;
+      stiff = 2.2;
+    } else if (fp) {
       const look = this.yaw + Math.PI;
       // Seated eye level, a little behind the seat point (where the head is).
       const eye = this.seatY + 1.3 + this.pos.y;
@@ -372,8 +395,17 @@ export class Player {
     this.camLook.set(damp(this.camLook.x, lookX, stiff, dt), damp(this.camLook.y, lookY, stiff, dt), damp(this.camLook.z, lookZ, stiff, dt));
     cam.position.copy(this.camPos);
     cam.lookAt(this.camLook);
-    const street = this.camMode !== 'high';
-    const fov = fp ? 68 : (street ? 55 : 45) + (running && this.moving ? 4 : 0);
+    if (!view) {
+      // Still gliding down from the aerial view: keep the town in range.
+      const far = Math.max(1100, this.camPos.distanceTo(this.pos) * 1.5 + 900);
+      if (Math.abs(cam.far - far) > 20 || cam.near !== 0.5) {
+        cam.far = far;
+        cam.near = 0.5;
+        cam.updateProjectionMatrix();
+      }
+    }
+    const street = this.camMode !== 'high' && !view;
+    const fov = fp ? 68 : (street ? 55 : 45) + (running && this.moving && !view ? 4 : 0);
     if (Math.abs(cam.fov - fov) > 0.05) {
       cam.fov = damp(cam.fov, fov, 4, dt);
       cam.updateProjectionMatrix();

@@ -645,7 +645,7 @@ function setMenu(open) {
 }
 $('menu-btn').onclick = () => setMenu(!document.body.classList.contains('menu-open'));
 // Picking something closes it again (run and view stay open so you can cycle them).
-for (const el of document.querySelectorAll('.hotbar .slot, #places-btn, #react-btn, #tour-btn')) {
+for (const el of document.querySelectorAll('.hotbar .slot, #places-btn, #react-btn, #tour-btn, #city-btn')) {
   el.addEventListener('click', () => setMenu(false));
 }
 $('search').addEventListener('submit', () => setMenu(false));
@@ -844,6 +844,28 @@ const tour = new Tour({
     if (done) ui.celebrate('🧭 Tour complete! Welcome to town.');
   },
 });
+// 🛩️ City: fly up and see the whole town; any move of your own (or ✕)
+// brings you back down to where you were standing.
+function setCity(on) {
+  if (on === player.aerial) return;
+  if (on) {
+    tour.stop();
+    player.leaveSeat();
+    player.target = null;
+    const n = world.totalHouses;
+    $('city-text').textContent = `🛩️ The whole town · ${n.toLocaleString()} ${n === 1 ? 'home' : 'homes'}`;
+  }
+  player.setAerial(on);
+  document.body.classList.toggle('aerial', on);
+  $('citybar').hidden = !on;
+}
+$('city-btn').onclick = () => setCity(true);
+$('citybar').querySelector('.city-back').onclick = () => setCity(false);
+addEventListener('keydown', (e) => {
+  if (!player.aerial || e.target instanceof HTMLInputElement) return;
+  if (e.key === 'Escape' || /^(w|a|s|d|arrow\w+)$/i.test(e.key)) setCity(false);
+});
+
 $('tour-btn').onclick = () => {
   if (tour.active) return tour.stop();
   hangout.leaveHouse();
@@ -1196,6 +1218,7 @@ function frame(now) {
   townGoals(now);
   nav.update(t);
   tour.update();
+  if (player.aerial && player.joy && player.joy.length > 0.12) setCity(false);
   bubbles.update();
   net.update(player, dt, now);
   particles.update(dt);
@@ -1211,4 +1234,4 @@ requestAnimationFrame(frame);
 boot();
 
 // Expose a tiny debug handle in development only.
-if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, VENUES, life, nav, net, react, hangout, tour, openPlaces, openSignIn, openPassword, setMe: (m) => (me = m) };
+if (import.meta.env.DEV) window.__town = { world, player, store, PLAZA, VENUES, life, nav, net, react, hangout, tour, setCity, openPlaces, openSignIn, openPassword, setMe: (m) => (me = m) };

@@ -20,6 +20,7 @@ import { Sky } from './sky.js';
 import { loadBlock } from './api.js';
 import { buildCentre } from './centre.js';
 import { Forest } from './forest.js';
+import { CityModel, townBounds } from './aerial.js';
 
 // Rendering strategy for a big town:
 // - Only blocks within LOAD_RADIUS of the player are kept in memory.
@@ -101,6 +102,7 @@ export class World {
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.5, 1100);
     this.sky = new Sky(this.scene, this.renderer);
     this.forest = new Forest(this.scene);
+    this.aerial = null; // { x, z, r, d, scale } while viewing the whole town
     this.night = 0;
 
     this.totalHouses = 0;
@@ -117,6 +119,7 @@ export class World {
     this.dirtyNodes = false;
 
     this.#buildGround();
+    this.city = new CityModel(this.scene, bandColor, this.ground.material.map);
     this.#buildHouseMeshes();
     this.#buildNodeMeshes();
     this.#buildProps();
@@ -147,8 +150,10 @@ export class World {
   // ---------- ground ----------
   #buildGround() {
     const tex = roadTexture();
-    const size = PITCH * 9;
-    tex.repeat.set(9, 9);
+    // An odd number of pitches, centred on a block centre, so tile edges fall
+    // on road centres. Wide enough to fill the aerial view of the whole town.
+    const size = PITCH * 41;
+    tex.repeat.set(41, 41);
     this.ground = new THREE.Mesh(new THREE.PlaneGeometry(size, size).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tex }));
     this.ground.receiveShadow = true;
     // The plane spans 9 pitches centred on a block centre, so its tile edges
@@ -503,6 +508,54 @@ export class World {
     this.scene.add(this.marker);
   }
 
+  // 🛩️ The whole town from the air (on) or back to street level (off).
+  setAerial(on) {
+    this.aerial = on ? {} : null;
+    this.city.group.visible = on;
+    this.ground.visible = !on; // the model village brings its own streets
+    this.cityKey = null;
+    this.scene.fog.near = 150;
+    this.scene.fog.far = 330;
+    this.camera.far = 1100;
+    this.camera.updateProjectionMatrix();
+  }
+
+  // Where the aerial camera sits: far enough back to fit the whole town on
+  // screen, whatever the screen's shape. Sky, fog and far plane grow to match.
+  #aerialView() {
+    if (!this.aerial) return null;
+    const B = townBounds(this.totalHouses);
+    const v = (45 * Math.PI) / 180;
+    const h = 2 * Math.atan(Math.tan(v / 2) * this.camera.aspect);
+    const d = (B.r * 0.92) / Math.sin(Math.min(v, h) / 2);
+    const scale = Math.max(1, (d * 1.35) / 900);
+    Object.assign(this.aerial, { x: B.x, z: B.z, r: B.r, d, scale });
+    const far = Math.max(1100, 1100 * scale);
+    if (this.camera.far !== far) {
+      this.camera.far = far;
+      this.camera.near = Math.max(0.5, d * 0.006); // depth precision from high up
+      this.camera.updateProjectionMatrix();
+    }
+    this.scene.fog.near = d * 1.05;
+    this.scene.fog.far = d * 2.1;
+    return this.aerial;
+  }
+
+  // The model village: every block and wild cell the detailed world isn't
+  // drawing round you right now.
+  #rebuildCity(center) {
+    const loaded = [...this.blocks.entries()].filter(([, v]) => v).map(([b]) => b).sort((a, b) => a - b);
+    const key = `${this.totalHouses}|${loaded.join(',')}|${Math.round(center.x / PITCH)},${Math.round(center.z / PITCH)}`;
+    if (key === this.cityKey) return;
+    this.cityKey = key;
+    const have = new Set(loaded);
+    this.city.build(this.totalHouses, {
+      skipBlock: (b) => have.has(b),
+      skipWild: (gx, gz) => this.forest.covers(gx, gz, center),
+      cellTrees: (gx, gz) => this.forest.cellTrees(gx, gz),
+    });
+  }
+
   setTotal(n) {
     if (n !== this.totalHouses) {
       this.totalHouses = n;
@@ -521,8 +574,9 @@ export class World {
   update(px, pz, t, dt) {
     const center = new THREE.Vector3(px, 0, pz);
     this.ground.position.set(Math.round(px / PITCH) * PITCH, 0, Math.round(pz / PITCH) * PITCH);
-    const day = this.sky.update(center, dt);
-    this.forest.update(center, this.totalHouses, this.sky.horizon, day);
+    const view = this.#aerialView();
+    const day = this.sky.update(center, dt, view);
+    this.forest.update(center, this.totalHouses, this.sky.horizon, day, view);
     const night = 1 - day;
     if (Math.abs(night - this.night) > 0.02 || this.dirtyGlow) {
       this.night = night;
@@ -554,6 +608,7 @@ export class World {
     }
     if (this.dirtyHouses) this.#rebuildHouses();
     if (this.dirtyNodes) this.#rebuildNodes();
+    if (view) this.#rebuildCity(center);
     this.#animate(t, dt, px, pz);
     this.venues?.update(t, dt, this.swingSeat);
   }
