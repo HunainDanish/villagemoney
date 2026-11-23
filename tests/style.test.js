@@ -52,3 +52,11 @@ test('customising is free and saved in the house look', () => {
   assert.equal(s.paint.wall, 5);
   assert.equal(s.coins, initialState().coins + 5, 'only the daily gift changed coins');
 });
+
+test('porch light colour: classic warm by default, any light colour, no premium set', () => {
+  assert.equal(lookFor(42).light, 0);
+  assert.equal(lookFor(42, { light: 6 }).light, 6);
+  assert.equal(lookFor(42, { light: PALETTES.light.length }).light, 0);
+  assert.equal(customizeProblem(1, 'light', PALETTES.light.length - 1), null);
+  assert.notEqual(customizeProblem(5, 'light', PALETTES.light.length), null);
+});

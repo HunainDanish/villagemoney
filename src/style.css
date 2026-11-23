@@ -259,3 +259,70 @@ body.fp #vignette { display: none; }
   .slot { min-width: 52px; }
   .hint { display: none; }
 }
+
+/* ---------- Refresh: display face, tactile buttons, porch-light nights ---------- */
+:root {
+  --display: 'Bricolage Grotesque', 'Nunito', system-ui, sans-serif;
+  --glow: #ffb35c;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+}
+.brand strong, .sheet h2, .celebrate, .nav-text { font-family: var(--display); letter-spacing: -0.02em; }
+.brand strong { font-size: 21px; font-weight: 800; line-height: 1.05; }
+.sheet h2 { font-size: 24px; font-weight: 800; }
+
+.brand, .chip, .search, .hotbar, .round, .menu-fab, .hint {
+  backdrop-filter: blur(10px) saturate(1.2); -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  transition: background-color .6s var(--ease), border-color .6s var(--ease), color .6s var(--ease), box-shadow .6s var(--ease), transform .18s var(--ease);
+}
+.round:hover, .menu-fab:hover { transform: translateY(-2px); }
+.round:active, .menu-fab:active, .btn:active { transform: scale(.94); }
+.btn { transition: transform .18s var(--ease), background-color .2s, filter .2s; }
+.btn:hover:not(:disabled) { filter: brightness(1.05); }
+:focus-visible { outline: 3px solid var(--glow); outline-offset: 2px; }
+::selection { background: var(--glow); color: var(--ink); }
+
+/* At night the HUD becomes dark glass lit from the porch. */
+body.night {
+  --n-panel: rgba(24, 22, 30, .78);
+  --n-line: rgba(255, 179, 92, .32);
+  --n-ink: #fbefdc;
+  --n-muted: #c9b79e;
+}
+body.night .brand, body.night .chip, body.night .search, body.night .hotbar,
+body.night .round, body.night .menu-fab, body.night .hint {
+  background: var(--n-panel); border-color: var(--n-line); color: var(--n-ink);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35), 0 0 0 1px rgba(255, 179, 92, .08), 0 0 18px rgba(255, 179, 92, .10);
+}
+body.night .brand span, body.night .search span, body.night .round small { color: var(--n-muted); }
+body.night .slot, body.night .chip-btn, body.night .search input { color: var(--n-ink); }
+body.night .search input::placeholder { color: var(--n-muted); }
+body.night .search button { background: var(--glow); color: #2a1700; }
+body.night .slot:hover { background: rgba(255, 179, 92, .14); }
+body.night .brand strong { color: #fff3e0; text-shadow: 0 0 14px rgba(255, 179, 92, .45); }
+body.night.menu-open .menu-fab { background: var(--glow); color: #2a1700; }
+
+/* 👣 Visitors on a house card */
+.visitors { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 10px; font-size: 13.5px; }
+.visitors .v-count { font-weight: 900; margin-right: 2px; }
+.v-name { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; transition: border-color .2s, transform .18s var(--ease); }
+.v-name:hover { border-color: var(--accent); transform: translateY(-1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
+
+.chip { white-space: nowrap; }
+@media (max-width: 640px) {
+  .chips { gap: 6px; flex-wrap: wrap; }
+  .chip { padding: 6px 10px; font-size: 13px; }
+}
+
+/* 🌿 Yard editor: one compact row of options per spot */
+.yard-spot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.yard-spot b { font-size: 13px; white-space: nowrap; }
+.opts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.opt { width: 40px; height: 40px; border-radius: 12px; border: 2px solid var(--line); background: #fff; font-size: 19px; line-height: 1; cursor: pointer; transition: transform .18s var(--ease), border-color .2s; }
+.opt:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--accent); }
+.opt.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.opt:disabled { opacity: .4; cursor: not-allowed; font-size: 14px; }
+@media (max-width: 400px) { .opts { gap: 4px; } .opt { width: 34px; height: 34px; font-size: 16px; border-radius: 10px; } .yard-spot b { font-size: 12px; } }

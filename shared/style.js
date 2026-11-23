@@ -30,6 +30,9 @@ export const PALETTES = {
     0x4a5a6b, 0x2f3a56, 0x3f6b4f, 0x8a2b2b, 0x5a4636, 0x1f1f24,
     0xf2f0eb, 0x6f8fb5, 0x9fb7a0, 0xd9a441, 0x7b5ea7, 0xc0504d,
   ],
+  // Porch light bulb and its glow at night. Not part of the unique defaults:
+  // every house starts with the classic warm light.
+  light: [0xffd27a, 0xfff1c9, 0xff9f45, 0xff6b5a, 0xff9ec7, 0xc7a2ff, 0x9fd8ff, 0x9cf0b8],
 };
 
 // Mansion-only colours, added to the end of every palette.
@@ -39,12 +42,13 @@ export const PREMIUM_TIER = 5;
 export const STARTER_STYLES = ['Cottage', 'Log cabin', 'Bungalow'];
 
 // Which house tier unlocks customising each part.
-export const PART_UNLOCK = { style: 1, wall: 1, roof: 1, door: 2, trim: 3, shutter: 4 };
+export const PART_UNLOCK = { style: 1, wall: 1, roof: 1, light: 1, door: 2, trim: 3, shutter: 4 };
 export const PART_NAMES = {
-  style: 'Starter style', wall: 'Walls', roof: 'Roof', door: 'Front door', trim: 'Trim & window frames', shutter: 'Shutters',
+  style: 'Starter style', wall: 'Walls', roof: 'Roof', door: 'Front door', trim: 'Trim & window frames', shutter: 'Shutters', light: 'Porch light',
 };
 
-export const paletteFor = (part) => [...PALETTES[part], ...PREMIUM];
+// Dark royal colours make no sense as a light, so the bulb has no premium set.
+export const paletteFor = (part) => (part === 'light' ? PALETTES.light : [...PALETTES[part], ...PREMIUM]);
 export const colorOf = (part, index) => paletteFor(part)[index] ?? PALETTES[part][0];
 
 // ---------- unique defaults ----------
@@ -81,7 +85,7 @@ export function defaultLook(id) {
 
 // A house's full look: its unique default, overridden by what the resident chose.
 export function lookFor(id, paint = {}) {
-  const base = defaultLook(id);
+  const base = { ...defaultLook(id), light: 0 };
   const out = { ...base };
   for (const part of Object.keys(base)) {
     const v = paint?.[part];

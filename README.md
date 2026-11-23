@@ -19,6 +19,9 @@ The live site is in **houses-only mode**. Every follower gets a house, and you c
 - **🎥 View:** switches between street level (low, behind you) and the view from above.
 - **😊 React:** wave, ❤️, 😂, 🎉, 😮 and short phrases ("hi!", "nice house!"…) shown as speech bubbles to players nearby. It is a fixed set with no free text, so there is nothing to moderate.
 - **📍 Places and 🧭 Walk here** (on house cards): GPS directions along streets and lanes, with arrows on the ground, a turn-by-turn banner, distance and time, and ▶ to walk there automatically.
+- **📤 House links:** `/?h=username` lands a visitor right outside that house. Your own house card has **Share my house** (the phone share sheet, or copy on a computer), made for an Instagram story or bio link.
+- **👣 Visitors:** every signed-in knock is logged once per visitor per day, and house cards show the count and the latest visitors (tap a name to go to their house). Needs `supabase/006_visits.sql`.
+- **🌙 Porch-light nights:** after dark the buttons and bars turn to dark glass with a warm glow.
 
 - **Switch the game back on:** set `GAME = true` in [shared/features.js](shared/features.js).
 - **The full game exactly as it was** is also saved on the `full-game` branch.
@@ -63,6 +66,7 @@ Other free Postgres options, such as Neon, would work for the database, but you'
 | `IG_HANDLE` | Your Instagram handle, used by the "Get my house key" button |
 | `TOWN_NAME` | Your town's name |
 | `PUBLIC_SITE_URL` | e.g. `https://your-project.vercel.app` |
+| `CRON_SECRET` | A long random string; lets Vercel's weekly cron renew the Instagram token |
 
 4. Redeploy. The demo badge disappears once the database is connected.
 
@@ -83,7 +87,9 @@ Only send a link to the account that actually DMed you. That DM is what proves t
 1. In the Meta app dashboard, set the webhook callback to `https://your-site/api/instagram`, choose a verify token, and subscribe to `messages` and `comments`.
 2. Add `IG_APP_SECRET`, `IG_ACCESS_TOKEN` and `IG_VERIFY_TOKEN` in Vercel and redeploy.
 
-After that, DMs saying "key" get a link automatically, and 🏠 comments build houses. Check the payload field names against Meta's current Instagram API docs when you set this up, since Meta changes them from time to time.
+3. Add `CRON_SECRET` (a long random string) and run `supabase/006_visits.sql`. The cron in `vercel.json` then renews the Instagram token every Monday, so it never reaches its 60-day expiry.
+
+After that, DMs saying "key" get a link automatically, and 🏠 comments build houses and get a reply with the house number and its link. Check the payload field names against Meta's current Instagram API docs when you set this up, since Meta changes them from time to time.
 
 ## Upgrading an existing database (game update)
 

@@ -53,6 +53,15 @@ export async function findHouse(username) {
   return get(`/api/find?u=${encodeURIComponent(username)}`);
 }
 
+export async function loadVisitors(id) {
+  if (demo) {
+    const total = (id * 7) % 40;
+    const recent = [3, 11, 29, 41, 58].slice(0, Math.min(5, total)).map((k) => demoName(((id + k * 37) % DEMO_HOUSES) + 1));
+    return { total, recent };
+  }
+  return get(`/api/social/visitors?h=${id}`);
+}
+
 export async function loadMe() {
   if (demo) return { resident: null };
   try {

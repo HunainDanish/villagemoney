@@ -32,9 +32,23 @@ export async function POST(request) {
       const { error } = await db().rpc('villa_add', { p_villa: v, p_n: bricks[v] });
       if (error) console.error('villa_add failed (run supabase/005_villas.sql)', error.message);
     }
+    await logVisits(resident.id, actions, results);
     return json({ state, results: results.map((r) => ({ ok: r.ok, reason: r.reason })) });
   } catch (e) {
     console.error('actions failed', e);
     return errorJson('Could not save your progress', 500);
   }
+}
+
+// Knocks feed each house's visitor log (supabase/006_visits.sql). A missing
+// table or a knock on an empty plot must never fail the save itself.
+async function logVisits(visitorId, actions, results) {
+  const houses = new Set();
+  actions.forEach((a, i) => {
+    if (a?.a === 'visit' && results[i]?.ok && a.house !== visitorId) houses.add(a.house);
+  });
+  if (!houses.size) return;
+  const rows = [...houses].map((house_id) => ({ house_id, visitor_id: visitorId }));
+  const { error } = await db().from('visits').upsert(rows, { onConflict: 'house_id,visitor_id,day', ignoreDuplicates: true });
+  if (error) console.error('visit log failed (run supabase/006_visits.sql)', error.message);
 }
