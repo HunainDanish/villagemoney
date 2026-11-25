@@ -109,3 +109,23 @@ test('social routes need sign-in and reject unknown actions', async () => {
   const wrong = await social.GET(new Request('http://x/api/social/raid'));
   assert.equal(wrong.status, 405);
 });
+
+test('token refresh only runs for the cron secret', async () => {
+  const call = (headers) => admin.GET(new Request('http://x/api/admin/refresh', { headers }));
+  delete process.env.CRON_SECRET;
+  assert.equal((await call({ authorization: 'Bearer ' })).status, 403);
+  process.env.CRON_SECRET = 'a-long-cron-secret-123';
+  assert.equal((await call({})).status, 403);
+  assert.equal((await call({ authorization: 'Bearer wrong' })).status, 403);
+  delete process.env.CRON_SECRET;
+});
+
+test('visitors needs a valid house number', async () => {
+  const social = await import('../api/social/[action].js');
+  for (const h of ['', '0', '-3', 'abc', '1.5']) {
+    const res = await social.GET(new Request(`http://x/api/social/visitors?h=${h}`));
+    assert.equal(res.status, 400, `h=${h}`);
+  }
+  const post = await social.POST(new Request('http://x/api/social/visitors?h=1', { method: 'POST' }));
+  assert.equal(post.status, 405);
+});

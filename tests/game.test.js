@@ -125,3 +125,24 @@ test('house upgrades cost materials and coins, one tier at a time', () => {
   assert.equal(s.items.log, 2000 - spent);
   assert.equal(s.items.bench, 0);
 });
+
+test('houses-only yard decor is free and unlocks with the house tier', async () => {
+  const { DECOR_TIER } = await import('../shared/game.js');
+  let s = initialState();
+  let r;
+  ({ state: s, results: r } = applyBatch(s, [{ a: 'yard', slot: 0, item: 'fence' }], ctx(T0)));
+  assert.ok(r[0].ok);
+  assert.equal(s.decor[0], 'fence');
+  assert.equal(s.items.fence, undefined, 'nothing is taken from the bag');
+  ({ results: r } = applyBatch(s, [{ a: 'yard', slot: 1, item: 'gnome' }], ctx(T0)));
+  assert.equal(r[0].ok, false, 'gnome needs a bigger house');
+  ({ state: s, results: r } = applyBatch({ ...s, tier: DECOR_TIER.gnome }, [{ a: 'yard', slot: 1, item: 'gnome' }], ctx(T0)));
+  assert.ok(r[0].ok);
+  for (const bad of [{ slot: 99, item: 'fence' }, { slot: 0, item: 'wheat' }, { slot: -1, item: null }]) {
+    ({ results: r } = applyBatch(s, [{ a: 'yard', ...bad }], ctx(T0)));
+    assert.equal(r[0].ok, false, JSON.stringify(bad));
+  }
+  ({ state: s, results: r } = applyBatch(s, [{ a: 'yard', slot: 0, item: null }], ctx(T0)));
+  assert.ok(r[0].ok);
+  assert.equal(s.decor[0], null);
+});

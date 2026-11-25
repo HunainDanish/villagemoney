@@ -206,9 +206,10 @@ export class World {
     this.porch.setColorAt(0, new THREE.Color());
     this.porchGlow = this.#instanced(
       new THREE.CircleGeometry(1.4, 16),
-      new THREE.MeshBasicMaterial({ color: 0xffc56b, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending }),
       CAPACITY,
     );
+    this.porchGlow.setColorAt(0, new THREE.Color());
     // Decor items placed in yards.
     this.decorMeshes = {
       fence: this.#instanced(fenceGeometry(), vc(), CAPACITY, { cast: true }),
@@ -709,7 +710,7 @@ export class World {
         const full = this.overrides.has(h0.id) ? { ...h0, ...this.overrides.get(h0.id) } : h0;
         // Houses-only mode still shows upgrades (earned with house points).
         // Houses-only mode still shows upgrades and each house's own colours.
-        const h = GAME ? full : { id: full.id, u: full.u, lit: full.lit, t: full.t, p: full.p, c: full.c };
+        const h = GAME ? full : { id: full.id, u: full.u, lit: full.lit, t: full.t, p: full.p, c: full.c, d: full.d };
         if (h.mv) continue; // moved in with someone: this plot stands empty
         const p = housePosition(h.id);
         const seed = hash(h.id);
@@ -757,7 +758,7 @@ export class World {
           q.setFromAxisAngle(up, p.facing);
           return m.compose(new THREE.Vector3(w.x, 0, w.z), q, one);
         };
-        const rec = { ...h, x: p.x, z: p.z, facing: p.facing, style: model, height: meta.height + 1.5, windows: Boolean(h.lit) || hash(h.id + 99) % 10 < 7 };
+        const rec = { ...h, light: colorOf('light', look.light), x: p.x, z: p.z, facing: p.facing, style: model, height: meta.height + 1.5, windows: Boolean(h.lit) || hash(h.id + 99) % 10 < 7 };
         const names = [h.u, ...(h.m || [])].filter(Boolean).map((u) => `@${u}`);
         rec.label = names.length ? names.join(' & ') : 'A neighbour';
         // Garden beds and crops (growth stage from planting time).
@@ -835,13 +836,15 @@ export class World {
     (this.drawnAll || []).forEach((h, i) => {
       // Porch light shines only for residents active today (the "porchlight").
       const on = Boolean(this.houses.get(h.id)?.lit) || this.overrides.has(h.id);
-      this.porch.setColorAt(i, on ? c.setHex(0xffd27a).lerp(grey, 1 - n) : grey);
+      this.porch.setColorAt(i, on ? c.setHex(h.light).lerp(grey, 1 - n) : grey);
+      this.porchGlow.setColorAt(i, c.setHex(h.light));
       const s = on ? Math.max(0.001, n) : 0.001;
       const p = this.porchPos[i];
       m.makeRotationX(-Math.PI / 2).scale(new THREE.Vector3(s, s, s)).setPosition(p.x, 0.36, p.z);
       this.porchGlow.setMatrixAt(i, m);
     });
     if (this.porch.instanceColor) this.porch.instanceColor.needsUpdate = true;
+    if (this.porchGlow.instanceColor) this.porchGlow.instanceColor.needsUpdate = true;
     this.porchGlow.instanceMatrix.needsUpdate = true;
     this.lampBulbs.material.color.setHex(0x8a8a80).lerp(new THREE.Color(0xfff1c9), Math.min(1, n * 1.4));
   }

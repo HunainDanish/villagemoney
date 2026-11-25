@@ -6,10 +6,10 @@ import { Net } from './net.js';
 import { Store } from './store.js';
 import { Activities } from './activities.js';
 import { Particles, sfx, isMuted, setMuted } from './fx.js';
-import { loadConfig, loadStats, loadMe, findHouse, send, isDemo, demoBricks } from './api.js';
+import { loadConfig, loadStats, loadMe, findHouse, loadVisitors, send, isDemo, demoBricks } from './api.js';
 import { housePosition, blockOfHouse, normalizeUsername, PITCH } from '../shared/layout.js';
 import {
-  ITEMS, RECIPES, SKILLS, WALL_PAINTS, ROOF_PAINTS, PAINT_PRICE, HOUSE_TIERS,
+  ITEMS, RECIPES, SKILLS, WALL_PAINTS, ROOF_PAINTS, PAINT_PRICE, HOUSE_TIERS, DECOR_TIER,
   levelFor, xpForLevel, dailyQuests, questProgress,
 } from '../shared/game.js';
 import { YARD_SLOTS, PLAZA } from '../shared/nodes.js';
@@ -29,7 +29,7 @@ import { villaDoor, BOULEVARD } from './centre.js';
 import { DISTRICTS, districtOf } from '../shared/layout.js';
 import { SKIN, HAIR, HAIR_STYLES, SHIRTS, PANTS, HATS, FREE_SHIRTS, FREE_HATS, defaultAvatar, giftName } from '../shared/look.js';
 import { GAME } from '../shared/features.js';
-import { PALETTES, PREMIUM, PREMIUM_TIER, PART_UNLOCK, PART_NAMES, STARTER_STYLES, lookFor, paletteFor } from '../shared/style.js';
+import { PALETTES, PREMIUM, PREMIUM_TIER, PART_UNLOCK, PART_NAMES, STARTER_STYLES, lookFor, paletteFor, defaultLook } from '../shared/style.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat();
@@ -180,15 +180,20 @@ function openPlainHouse(h, mine, onKnock) {
     const tierName = HOUSE_TIERS[(h.t || 1) - 1]?.name || 'Starter home';
     el.innerHTML = `
       <p>House #${fmt.format(h.id)} · ${tierName}${world.houses.get(h.id)?.lit ? ' · porch light is on tonight 🏮' : ''}</p>
+      <div class="visitors" id="h-visitors"><span class="v-count">👣 …</span></div>
       ${mine ? upgradeByPointsHTML() : ''}
       <div class="stack">
         ${mine ? '' : '<button class="btn primary" id="h-knock">👋 Knock on the door</button>'}
         <button class="btn" id="h-walk">🧭 ${player.vehicle ? 'Drive' : 'Walk'} here</button>
         <button class="btn" id="h-visit">🚪 Visit inside</button>
+        ${h.u ? `<button class="btn${mine ? ' primary' : ''}" id="h-share">${mine ? '📤 Share my house' : '🔗 Copy link to this house'}</button>` : ''}
         ${h.u ? `<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/${encodeURIComponent(h.u)}/">Open on Instagram</a>` : ''}
       </div>`;
+    showVisitors(el.querySelector('#h-visitors'), h.id, mine);
+    el.querySelector('#h-share')?.addEventListener('click', () => shareHouse(h.u, mine));
     el.querySelector('#h-knock')?.addEventListener('click', () => (closeSheet(), onKnock(h)));
     el.querySelector('#customize-btn')?.addEventListener('click', openCustomize);
+    el.querySelector('#yard-btn')?.addEventListener('click', openYard);
     el.querySelector('#h-visit')?.addEventListener('click', () => {
       closeSheet();
       if (player.vehicle) $('drive-btn').click(); // park first
@@ -215,6 +220,8 @@ function openPlainHouse(h, mine, onKnock) {
 
 // Customise your house: free; upgrades unlock more parts. Every change shows
 // on your house right away (it's visible just above this sheet).
+const HOUSE_PARTS = ['style', 'wall', 'roof', 'light', 'door', 'trim', 'shutter'];
+
 function openCustomize() {
   if (!me) return;
   openSheet('Customize my house', (el) => {
@@ -238,7 +245,8 @@ function openCustomize() {
     };
     el.innerHTML = `
       <p>Free to change any time. Every house starts with its own unique look, and upgrading unlocks more to customise. ✨ colours unlock with the Mansion.</p>
-      ${['style', 'wall', 'roof', 'door', 'trim', 'shutter'].map(section).join('')}
+      <div class="wrap"><button class="btn" id="c-random">🎲 Surprise me</button><button class="btn" id="c-reset">↺ My original look</button></div>
+      ${HOUSE_PARTS.map(section).join('')}
       <p>${tier < 4 ? 'Shutters appear on cottages, family homes, two-storey houses and manors.' : ''}</p>`;
     el.querySelectorAll('[data-part]').forEach((b) =>
       (b.onclick = async () => {
@@ -249,10 +257,85 @@ function openCustomize() {
         }
       }),
     );
+    const restyle = async (pick) => {
+      const open = HOUSE_PARTS.filter((part) => tier >= PART_UNLOCK[part]);
+      const results = await Promise.all(open.map((part) => store.act({ a: 'customize', part, index: pick(part) })));
+      if (!results.some((r) => r.ok)) return ui.toast('Nothing to change yet');
+      sfx.level();
+      syncOwnHouse();
+      openCustomize();
+    };
+    const original = { ...defaultLook(me.home_id || me.id), light: 0 };
+    el.querySelector('#c-random').onclick = () =>
+      restyle((part) => {
+        const n = part === 'style' ? STARTER_STYLES.length : tier >= PREMIUM_TIER ? paletteFor(part).length : PALETTES[part].length;
+        return Math.floor(Math.random() * n);
+      });
+    el.querySelector('#c-reset').onclick = () => restyle((part) => original[part]);
   });
 }
 
 // Today's progress, points and the next upgrade, for your own house card.
+async function showVisitors(el, id, mine) {
+  let v;
+  try {
+    v = await loadVisitors(id);
+  } catch {
+    return el.remove();
+  }
+  if (!el.isConnected) return;
+  const count = el.querySelector('.v-count');
+  if (!v.total) {
+    count.textContent = mine ? '👣 No knocks yet. Share your link to get your first visitor.' : '👣 Nobody has knocked yet. Be the first.';
+    return;
+  }
+  count.textContent = `👣 ${fmt.format(v.total)} ${v.total === 1 ? 'visit' : 'visits'}`;
+  for (const u of v.recent) {
+    const b = document.createElement('button');
+    b.className = 'v-name';
+    b.textContent = `@${u}`;
+    b.onclick = async () => {
+      const r = await findHouse(u).catch(() => null);
+      if (!r?.found) return ui.toast(`@${u} has no house you can visit`);
+      closeSheet();
+      goToHouse(r.id);
+    };
+    el.append(b);
+  }
+}
+
+const houseLink = (u) => `${location.origin}/?h=${encodeURIComponent(u)}`;
+
+async function shareHouse(u, mine) {
+  const url = houseLink(u);
+  const text = mine ? `Come knock on my door in ${cfg.townName} 🏠` : `@${u}'s house in ${cfg.townName} 🏠`;
+  if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+    try {
+      return await navigator.share({ title: cfg.townName, text, url });
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    ui.toast(mine ? 'Link copied. Put it in your story or bio 📋' : 'Link copied 📋');
+  } catch {
+    ui.toast(url);
+  }
+}
+
+// /?h=username lands you in front of that house.
+async function arriveAtSharedHouse(raw) {
+  const u = normalizeUsername(raw);
+  const r = u ? await findHouse(u).catch(() => null) : null;
+  if (!r?.found) {
+    setCity(true, { intro: true });
+    return ui.toast(u ? `No house for @${u} yet` : 'That house link is broken');
+  }
+  goToHouse(r.id);
+  ui.celebrate(me && (me.home_id || me.id) === r.id ? 'This is your house 🏠' : `You're outside @${u}'s house. Tap it to knock 👋`);
+}
+
 function upgradeByPointsHTML() {
   const s = store.state;
   const mins = Math.min(STAY.minutesPerPoint, s.counts?.minutes || 0);
@@ -264,7 +347,7 @@ function upgradeByPointsHTML() {
   return `
     <p>This is your house. Spend <b>15 active minutes</b> in town each day to earn <b>1 house point</b>, then use points to upgrade.</p>
     <div class="row"><span class="ico">⏳</span><div class="grow"><b>Today: ${mins}/${STAY.minutesPerPoint} min${done ? ' ✓ point earned' : ''}</b><div class="bar"><i style="width:${(mins / STAY.minutesPerPoint) * 100}%"></i></div><small>${done ? 'Come back tomorrow for another point.' : 'Only counts while this tab is open and you are moving around.'}</small></div></div>
-    <div class="stack"><button class="btn primary" id="customize-btn">🎨 Customize my house</button></div>
+    <div class="stack"><button class="btn primary" id="customize-btn">🎨 Customize my house</button><button class="btn" id="yard-btn">🌿 Decorate my yard</button></div>
     ${next ? `<div class="row"><span class="ico">⬆️</span><div class="grow"><b>Upgrade to ${next.name}</b><small>${next.blurb}</small><small>🏠 ${pts}/${nextCost} house points</small></div><button class="btn ${pts >= nextCost ? 'good' : ''}" id="pt-up" ${pts >= nextCost ? '' : 'disabled'}>Upgrade</button></div>` : '<p>🏆 Your house is fully upgraded: a mansion!</p>'}`;
 }
 
@@ -371,7 +454,7 @@ function openMyHouse() {
       <h3>Wall paint · ${PAINT_PRICE} 🪙 each</h3>${swatches(WALL_PAINTS, 'wall')}
       <h3>Roof paint · ${PAINT_PRICE} 🪙 each</h3>${swatches(ROOF_PAINTS, 'roof')}
       <div class="stack">
-        <button class="btn" id="decor-btn">🪴 Decorate my yard</button>
+        <button class="btn" id="decor-btn">🌿 Decorate my yard</button>
         <button class="btn" id="garden-btn">🌱 Garden</button>
         <button class="btn" id="kitchen-btn">🍳 Kitchen</button>
         <button class="btn" id="job-btn">💼 Job${s.job && JOBS[s.job] ? `: ${JOBS[s.job].icon} ${JOBS[s.job].name}` : ''}</button>
@@ -555,6 +638,40 @@ function openDecor() {
   });
 }
 
+// Houses-only mode: free decorations, unlocked by house tier.
+function openYard() {
+  if (!me) return ui.toast('Get your house key first');
+  openSheet('Decorate my yard', (el) => {
+    $('sheet').classList.add('short'); // keep your yard visible above
+    const s = store.state;
+    const tier = s.tier || 1;
+    const spot = (i) => {
+      const opt = (k) => {
+        const on = (s.decor[i] || '') === k;
+        if (!k) return `<button class="opt ${on ? 'on' : ''}" data-slot="${i}" data-item="" title="Empty">✕</button>`;
+        const locked = tier < DECOR_TIER[k];
+        const name = ITEMS[k].name;
+        return `<button class="opt ${on ? 'on' : ''}" data-slot="${i}" data-item="${k}" ${locked ? 'disabled' : ''} title="${locked ? `${name}: unlocks with the ${HOUSE_TIERS[DECOR_TIER[k] - 1].name}` : name}" aria-label="${name}">${locked ? '🔒' : ITEMS[k].icon}</button>`;
+      };
+      return `<div class="yard-spot"><b>Spot ${i + 1}</b><div class="opts">${['', ...Object.keys(DECOR_TIER)].map(opt).join('')}</div></div>`;
+    };
+    const locked = Object.keys(DECOR_TIER).filter((k) => tier < DECOR_TIER[k]);
+    el.innerHTML = `
+      <p>Six spots around your house. Everyone walking by sees them.${locked.length ? ` 🔒 items unlock as your house grows.` : ''}</p>
+      ${YARD_SLOTS.map((_, i) => spot(i)).join('')}`;
+    el.querySelectorAll('[data-slot]').forEach((b) =>
+      (b.onclick = async () => {
+        const r = await act({ a: 'yard', slot: Number(b.dataset.slot), item: b.dataset.item || null });
+        if (!r.ok) return;
+        sfx.pickup();
+        syncOwnHouse();
+        openYard();
+      }),
+    );
+  });
+  goToHouse(me.home_id || me.id, false);
+}
+
 function openMenu() {
   openSheet('Menu', (el) => {
     el.innerHTML = `
@@ -567,7 +684,7 @@ function openMenu() {
       <div class="stack">
         <button class="btn primary" id="m-look">👕 My look</button>
         <button class="btn" id="m-gift">🎁 Daily gift${store.state.giftDay === store.state.day ? ' (opened ✓)' : ''}</button>
-        ${me && GAME ? '<button class="btn" id="m-decor">🪴 Decorate my yard</button>' : ''}
+        ${me ? '<button class="btn" id="m-decor">🌿 Decorate my yard</button>' : ''}
         ${me && !me.demo ? `<button class="btn" id="m-password">🔒 ${me.has_password ? 'Change my password' : 'Set a password'}</button>` : ''}
         ${!me && !isDemo() ? '<button class="btn primary" id="m-signin">Sign in</button>' : ''}
         ${me && !me.demo ? '<button class="btn" id="m-logout">Sign out</button><button class="btn danger" id="m-delete">Delete my house and account</button>' : ''}
@@ -578,7 +695,7 @@ function openMenu() {
     el.querySelector('#m-music').onchange = (e) => music.toggle(e.target.checked);
     el.querySelector('#m-gift').onclick = openGift;
     el.querySelector('#m-ghost').onchange = (e) => setGhost(e.target.checked);
-    el.querySelector('#m-decor')?.addEventListener('click', openDecor);
+    el.querySelector('#m-decor')?.addEventListener('click', () => (GAME ? openDecor() : openYard()));
     el.querySelector('#m-password')?.addEventListener('click', openPassword);
     el.querySelector('#m-signin')?.addEventListener('click', openSignIn);
     el.querySelector('#m-hide')?.addEventListener('change', async (e) => {
@@ -615,7 +732,10 @@ function goToHouse(id, mark = true) {
   const p = housePosition(id);
   const dx = Math.sin(p.facing);
   const dz = Math.cos(p.facing);
-  player.teleport(p.x + dx * 10, p.z + dz * 10, p.x, p.z);
+  player.teleport(p.x + dx * 8, p.z + dz * 8, p.x, p.z);
+  // Straight behind you, the camera would sit inside the house across the
+  // lane (only 16 away). Off to one side it lands in the gap between houses.
+  player.yaw += 1;
   if (mark) world.showMarker(id);
 }
 
@@ -1085,6 +1205,7 @@ function openLook() {
       }).join('')}</div>`;
     el.innerHTML = `
       <p>Everyone sees your look as you walk around. 🎁 items unlock with the daily gift.</p>
+      <div class="wrap"><button class="btn" id="l-random">🎲 Surprise me</button><button class="btn" id="l-reset">↺ Original look</button></div>
       <h3>Skin</h3>${sw('skin', SKIN)}
       <h3>Hair</h3>${btns('style', HAIR_STYLES)}${sw('hair', HAIR)}
       <h3>Shirt</h3>${sw('shirt', SHIRTS, FREE_SHIRTS)}
@@ -1102,6 +1223,24 @@ function openLook() {
         }
       }),
     );
+    const wear = async (avatar) => {
+      const r = await act({ a: 'setLook', avatar });
+      if (!r.ok) return;
+      sfx.level();
+      player.setLook(net.name, store.state.avatar);
+      player.char.play('wave');
+      openLook();
+    };
+    const any = (list, part, free = list.length) => {
+      const open = list.map((_, i) => i).filter((i) => i < free || unlocks.includes(`${part}:${i}`));
+      return open[Math.floor(Math.random() * open.length)];
+    };
+    el.querySelector('#l-random').onclick = () =>
+      wear({
+        skin: any(SKIN, 'skin'), hair: any(HAIR, 'hair'), style: any(HAIR_STYLES, 'style'),
+        shirt: any(SHIRTS, 'shirt', FREE_SHIRTS), pants: any(PANTS, 'pants'), hat: any(HATS, 'hat', FREE_HATS),
+      });
+    el.querySelector('#l-reset').onclick = () => wear(defaultAvatar(net.name));
   });
 }
 
@@ -1189,7 +1328,8 @@ async function boot() {
 
   // Arriving: start with the whole town from the air (not when a link takes
   // you straight home).
-  if (!new URLSearchParams(location.search).has('home')) setCity(true, { intro: true });
+  const arrival = new URLSearchParams(location.search);
+  if (!arrival.has('home') && !arrival.has('h')) setCity(true, { intro: true });
   await refreshStats();
   setInterval(refreshStats, 60000);
 
@@ -1212,6 +1352,9 @@ async function boot() {
     goToHouse(me.home_id || me.id);
     ui.celebrate(`Welcome home, @${me.username}! 🏠`);
     if (!me.has_password && !me.demo) setTimeout(() => ui.toast('Tip: set a password in ⚙️ Menu to sign in on any device without a new key.'), 3500);
+    history.replaceState(null, '', '/');
+  } else if (params.has('h')) {
+    await arriveAtSharedHouse(params.get('h'));
     history.replaceState(null, '', '/');
   }
 
@@ -1255,6 +1398,7 @@ function frame(now) {
   if (now - clockAt > 1000) {
     clockAt = now;
     $('clock').textContent = `${world.night > 0.5 ? '🌙' : '☀️'} ${world.sky.clock()}`;
+    document.body.classList.toggle('night', world.night > 0.5);
   }
   requestAnimationFrame(frame);
 }

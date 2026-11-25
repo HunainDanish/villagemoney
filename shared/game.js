@@ -12,6 +12,7 @@ import {
 } from './life.js';
 import { customizeProblem } from './style.js';
 import { avatarProblem, GIFT_POOL } from './look.js';
+import { GAME } from './features.js';
 
 export const ITEMS = {
   log: { name: 'Log', icon: '🪵', sell: 2 },
@@ -25,7 +26,7 @@ export const ITEMS = {
   goldfish: { name: 'Golden carp', icon: '✨', sell: 60, fish: true },
   boot: { name: 'Old boot', icon: '🥾', sell: 1, fish: true },
   fence: { name: 'Picket fence', icon: '🚧', decor: true },
-  planter: { name: 'Planter', icon: '🪴', decor: true },
+  planter: { name: 'Planter', icon: '🌿', decor: true },
   bench: { name: 'Garden bench', icon: '🪑', decor: true },
   lantern: { name: 'Lantern', icon: '🏮', decor: true },
   birdhouse: { name: 'Birdhouse', icon: '🐦', decor: true },
@@ -49,6 +50,9 @@ export const ITEMS = {
   fish_stew: { name: 'Fish stew', icon: '🍲', meal: true },
   pumpkin_soup: { name: 'Pumpkin soup', icon: '🥣', meal: true },
 };
+
+// Houses-only mode: the house tier that unlocks each yard decoration.
+export const DECOR_TIER = { fence: 1, planter: 1, bench: 2, lantern: 2, birdhouse: 3, gnome: 4 };
 const FISH_ITEMS = ['minnow', 'perch', 'trout', 'koi', 'goldfish'];
 
 export const RECIPES = {
@@ -316,6 +320,20 @@ export function applyAction(s, action, ctx) {
       const prev = s.decor[slot];
       if (prev) addItem(s, prev, 1);
       if (item) s.items[item] -= 1;
+      s.decor[slot] = item;
+      events.push({ type: 'decor' });
+      return { ok: true, events };
+    }
+
+    // Houses-only mode: yard decorations are free and unlock with house tiers
+    // instead of crafting.
+    case 'yard': {
+      if (GAME) return fail('decorate with crafted items');
+      const slot = action.slot;
+      if (!Number.isInteger(slot) || slot < 0 || slot >= YARD_SLOTS.length) return fail('bad slot');
+      const item = action.item ?? null;
+      if (item !== null && !ITEMS[item]?.decor) return fail('that is not a decoration');
+      if (item !== null && (s.tier || 1) < DECOR_TIER[item]) return fail(`the ${ITEMS[item].name.toLowerCase()} unlocks with a bigger house`);
       s.decor[slot] = item;
       events.push({ type: 'decor' });
       return { ok: true, events };

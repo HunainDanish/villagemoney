@@ -3,11 +3,12 @@ import { getOrCreateResident, hasDb } from '../lib/db.js';
 import { createHouseKey, keyLink, safeEqual } from '../lib/auth.js';
 import { siteOrigin } from '../lib/http.js';
 import { normalizeUsername } from '../shared/layout.js';
+import { igToken } from '../lib/igtoken.js';
 
 // Instagram webhook: dormant until the IG_* environment variables are set.
 //
 //   DM "key"          -> build house if needed, DM back a single-use key link
-//   comment with 🏠   -> build the commenter's house
+//   comment with 🏠   -> build the commenter's house and reply with its number
 //
 // Setup (after Meta approves your app): in the Meta developer dashboard set the
 // callback URL to https://YOUR-SITE/api/instagram, the verify token to
@@ -52,7 +53,7 @@ export async function POST(request) {
   const jobs = [];
   for (const entry of body.entry ?? []) {
     for (const m of entry.messaging ?? []) jobs.push(handleMessage(m, origin));
-    for (const c of entry.changes ?? []) if (c.field === 'comments') jobs.push(handleComment(c.value));
+    for (const c of entry.changes ?? []) if (c.field === 'comments') jobs.push(handleComment(c.value, origin));
   }
   // Always answer 200 once the signature is valid, or Meta retries and
   // eventually disables the webhook. Failures are logged instead.
@@ -80,26 +81,35 @@ async function handleMessage(m, origin) {
   );
 }
 
-async function handleComment(value) {
+async function handleComment(value, origin) {
   if (!value?.text?.includes('🏠')) return;
   const username = normalizeUsername(value.from?.username);
   if (!username) return;
-  await getOrCreateResident(username, 'comment', value.from?.id ?? null);
+  const resident = await getOrCreateResident(username, 'comment', value.from?.id ?? null);
+  // Reply only when this comment built the house, so repeat 🏠s stay quiet.
+  if (!value.id || Date.now() - new Date(resident.created_at).getTime() > 60e3) return;
+  await graph(`${value.id}/replies`, {
+    message: `House #${resident.id} is yours 🏠 ${origin}/?h=${username} · DM me "key" to move in`,
+  });
 }
 
 async function lookupUsername(igsid) {
   const res = await fetch(`${API()}/${igsid}?fields=username`, {
-    headers: { authorization: `Bearer ${process.env.IG_ACCESS_TOKEN}` },
+    headers: { authorization: `Bearer ${await igToken()}` },
   });
   if (!res.ok) throw new Error(`username lookup failed: ${res.status}`);
   return (await res.json()).username;
 }
 
-async function sendDm(recipientId, text) {
-  const res = await fetch(`${API()}/me/messages`, {
+function sendDm(recipientId, text) {
+  return graph('me/messages', { recipient: { id: recipientId }, message: { text } });
+}
+
+async function graph(path, body) {
+  const res = await fetch(`${API()}/${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.IG_ACCESS_TOKEN}` },
-    body: JSON.stringify({ recipient: { id: recipientId }, message: { text } }),
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${await igToken()}` },
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`send DM failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new Error(`${path} failed: ${res.status} ${await res.text()}`);
 }
